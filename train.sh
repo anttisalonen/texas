@@ -10,7 +10,7 @@ mkdir -p good
 
 while [ 1 ] ; do
 	for i in $(seq 1 $NUM_FILTER_ROUNDS) ; do
-		best=$(./texas --money $START_MONEY --random 0 --ann $NUM_PLAYERS ai_*.net | tail -n20  | grep -E "^[0-9]+ \(ai_[0-9]+_[a-z]+\.net\): [0-9]+" | grep -o -E "ai_[0-9]+_[a-z]+\.net")
+		best=$(./texas --money $START_MONEY --random 0 --ann $NUM_PLAYERS ai_*.net | tail -n20  | grep -E "^[0-9]+ \(ai_[0-9]+_.*\.net\): [0-9]+" | grep -o -E "ai_[0-9]+_.*\.net")
 		for b in $best; do
 			cp $b good
 		done

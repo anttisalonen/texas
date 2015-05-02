@@ -1122,10 +1122,10 @@ int main(int argc, char **argv)
 			int num_output = 1;
 			*ann = fann_create_standard(num_layers, num_input,
 					num_neurons_hidden, num_output);
+			fann_randomize_weights(*ann, -1.0f, 1.0f);
+			fann_set_activation_function_hidden(*ann, FANN_SIGMOID_SYMMETRIC);
+			fann_set_activation_function_output(*ann, FANN_SIGMOID_SYMMETRIC);
 		}
-		fann_randomize_weights(*ann, -1.0f, 1.0f);
-		fann_set_activation_function_hidden(*ann, FANN_SIGMOID_SYMMETRIC);
-		fann_set_activation_function_output(*ann, FANN_SIGMOID_SYMMETRIC);
 		ais[i + data_pos].num_rounds_played = 0;
 		pool_add_player(&pool, start_money, ann_decision, ai_pool_func, &ais[i + data_pos], type);
 	}
@@ -1150,6 +1150,8 @@ int main(int argc, char **argv)
 	printf("Final score after %d rounds:\n", num_rounds);
 	th_print_money(&th, 1);
 	int save_pos = 0;
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
 	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		if(th.players[i].money && th.players[i].decision_data) {
 			struct ai_data *ai = (struct ai_data *)th.players[i].decision_data;
@@ -1161,8 +1163,9 @@ int main(int argc, char **argv)
 					for(int j = 0; j < 4; j++) {
 						randstr[j] = rand() % 20 + 'a';
 					}
-					snprintf(filename, 32, "ai_%d_%s.net",
-							save_pos++, randstr);
+					snprintf(filename, 32, "ai_%d_%s_%02d%02d.net",
+							save_pos++, randstr, tm.tm_hour,
+							tm.tm_min);
 					struct stat buffer;
 					if(stat(filename, &buffer) != 0) {
 						break;

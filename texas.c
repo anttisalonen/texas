@@ -445,7 +445,7 @@ void print_cards(const struct card *cards, int num_cards)
 	printf("\n");
 }
 
-#define MAX_PLAYERS 10
+#define TH_MAX_PLAYERS 10
 
 #define TH_MAX_PLAYER_NAME_LEN 32
 
@@ -474,7 +474,7 @@ const char *dec_to_str(enum th_decision d)
 
 struct texas_holdem;
 
-typedef enum th_decision (*th_decision_func)(const struct texas_holdem *th, int plnum, int raised_to);
+typedef enum th_decision (*th_decision_func)(const struct texas_holdem *th, int plnum, int raised_to, void *data);
 
 struct poker_player {
 	char name[TH_MAX_PLAYER_NAME_LEN];
@@ -483,13 +483,14 @@ struct poker_player {
 	int active;
 	struct card hole_cards[2];
 	th_decision_func decide;
+	void *decision_data;
 };
 
 struct texas_holdem {
 	int pot;
 	int small_blind;
 	struct card_deck deck;
-	struct poker_player players[MAX_PLAYERS];
+	struct poker_player players[TH_MAX_PLAYERS];
 	struct card community_cards[5];
 	int num_community_cards;
 	int dealer_pos;
@@ -498,8 +499,8 @@ struct texas_holdem {
 
 void th_print_money(const struct texas_holdem *th, int all)
 {
-	for(int i = 0; i < MAX_PLAYERS; i++) {
-		if(all || th->players[i].active)
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		if(th->players[i].decide && (all || th->players[i].active))
 			printf("%s: %d\n", th->players[i].name, th->players[i].money);
 	}
 }
@@ -510,7 +511,7 @@ void th_print_community_cards(const struct texas_holdem *th)
 	print_cards(th->community_cards, th->num_community_cards);
 }
 
-enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to)
+enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
 {
 	while(1) {
 		th_print_money(th, 0);
@@ -549,7 +550,7 @@ enum th_decision human_decision(const struct texas_holdem *th, int plnum, int ra
 	}
 }
 
-enum th_decision random_decision(const struct texas_holdem *th, int plnum, int raised_to)
+enum th_decision random_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
 {
 	if(!raised_to) {
 		int val = rand() % 2;
@@ -567,25 +568,35 @@ void th_init(struct texas_holdem* th, int small_blind)
 	th->small_blind = small_blind;
 }
 
-int th_add_player(struct texas_holdem* th, const char* name, int money, th_decision_func fun)
+int th_add_player(struct texas_holdem* th, const char* name, int money, th_decision_func fun, void *decision_data)
 {
-	for(int i = 0; i < MAX_PLAYERS; i++) {
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		if(th->players[i].money == 0) {
 			strncpy(th->players[i].name, name, TH_MAX_PLAYER_NAME_LEN);
 			th->players[i].name[TH_MAX_PLAYER_NAME_LEN - 1] = '\0';
 			th->players[i].money = money;
 			th->players[i].active = 1;
 			th->players[i].decide = fun;
-			return 0;
+			th->players[i].decision_data = decision_data;
+			return i;
 		}
 	}
 	return -1;
 }
 
+int th_remove_player(struct texas_holdem* th, int index)
+{
+	th->players[index].active = 0;
+	th->players[index].money = 0;
+	th->players[index].name[0] = '\0';
+	th->players[index].decide = NULL;
+	return 0;
+}
+
 int th_get_num_active_players(const struct texas_holdem *th)
 {
 	int num_players = 0;
-	for(int i = 0; i < MAX_PLAYERS; i++) {
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		if(th->players[i].active)
 			num_players++;
 	}
@@ -594,7 +605,7 @@ int th_get_num_active_players(const struct texas_holdem *th)
 
 void th_clear_paid_bets(struct texas_holdem *th)
 {
-	for(int i = 0; i < MAX_PLAYERS; i++) {
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		th->players[i].paid_bet = 0;
 	}
 }
@@ -607,10 +618,10 @@ int th_setup(struct texas_holdem *th)
 	shuffle_card_deck(&th->deck);
 	th->num_community_cards = 0;
 	th->dealer_pos++;
-	if(th->dealer_pos >= MAX_PLAYERS)
+	if(th->dealer_pos >= TH_MAX_PLAYERS)
 		th->dealer_pos = 0;
 
-	for(int i = 0; i < MAX_PLAYERS; i++) {
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		if(th->players[i].decide)
 			th->players[i].active = 1;
 		if(th->players[i].money < th->small_blind * 2)
@@ -643,7 +654,7 @@ void th_bet(struct texas_holdem* th, unsigned int plnum, int bet)
 
 void th_deal_hole_cards(struct texas_holdem* th)
 {
-	for(int i = 0; i < MAX_PLAYERS; i++) {
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		for(int j = 0; j < 2; j++) {
 			th->players[i].hole_cards[j] = deal_card(&th->deck);
 		}
@@ -655,7 +666,8 @@ int th_get_decision(struct texas_holdem *th, int plnum, int raised_to, int bet_a
 	if(!th->players[plnum].money)
 		return raised_to;
 
-	enum th_decision dec = th->players[plnum].decide(th, plnum, raised_to - th->players[plnum].paid_bet);
+	enum th_decision dec = th->players[plnum].decide(th, plnum, raised_to - th->players[plnum].paid_bet,
+			th->players[plnum].decision_data);
 	printf(" *** %s %s\n", th->players[plnum].name, dec_to_str(dec));
 
 	switch(dec) {
@@ -709,7 +721,7 @@ void th_betting_round(struct texas_holdem *th, int first_in_line, unsigned int b
 			first_round = 0;
 
 		i++;
-		if(i == MAX_PLAYERS)
+		if(i == TH_MAX_PLAYERS)
 			i = 0;
 	}
 }
@@ -719,7 +731,7 @@ int th_pl_index(struct texas_holdem *th, int pos)
 	int i = th->dealer_pos;
 	do {
 		i++;
-		if(i == MAX_PLAYERS)
+		if(i == TH_MAX_PLAYERS)
 			i = 0;
 		if(th->players[i].active)
 			pos--;
@@ -786,10 +798,10 @@ void th_showdown(struct texas_holdem *th)
 	uint64_t best_score = 0;
 	int best_player = 0;
 	int tied_players = 0;
-	struct poker_play best_hands[MAX_PLAYERS];
+	struct poker_play best_hands[TH_MAX_PLAYERS];
 	memset(best_hands, 0x00, sizeof(best_hands));
 
-	for(int pl = 0; pl < MAX_PLAYERS; pl++) {
+	for(int pl = 0; pl < TH_MAX_PLAYERS; pl++) {
 		if(!th->players[pl].active)
 			continue;
 
@@ -835,14 +847,14 @@ void th_showdown(struct texas_holdem *th)
 		printf("The following players split the pot of %d with %s:\n",
 				th->pot,
 				best_hands[best_player].cat->name);
-		for(int i = 0; i < MAX_PLAYERS; i++) {
+		for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 			if((1 << i) & tied_players) {
 				printf("\t%s\n", th->players[i].name);
 				num_tied_players++;
 			}
 		}
 		int split_pot = th->pot / num_tied_players;
-		for(int i = 0; i < MAX_PLAYERS; i++) {
+		for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 			if((1 << i) & tied_players) {
 				num_tied_players--;
 				if(num_tied_players == 0) {
@@ -875,6 +887,127 @@ int th_play_hand(struct texas_holdem *th)
 	return 0;
 }
 
+#define POOL_MAX_PLAYERS 10240
+
+typedef int (*pool_decision_func)(void *data);
+
+int human_pool_func(void *data)
+{
+	return 1;
+}
+
+struct ai_data {
+	int num_rounds_played;
+};
+
+int ai_pool_func(void *data)
+{
+	struct ai_data *d = (struct ai_data *)data;
+	d->num_rounds_played++;
+	if(d->num_rounds_played >= 10) {
+		d->num_rounds_played = 0;
+		return 0;
+	}
+	return 1;
+}
+
+
+struct pool_occupant {
+	char name[TH_MAX_PLAYER_NAME_LEN];
+	int money;
+	int table_pos;
+	int left_rounds;
+	th_decision_func decide;
+	pool_decision_func pool_func;
+	void *decision_data;
+};
+
+struct player_pool {
+	struct pool_occupant occupants[POOL_MAX_PLAYERS];
+	int num_occupants;
+	int sitters[TH_MAX_PLAYERS];
+	int next_attending;
+};
+
+void pool_init(struct player_pool *pool)
+{
+	memset(pool, 0x00, sizeof(*pool));
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		pool->sitters[i] = -1;
+	}
+}
+
+void pool_add_player(struct player_pool *pool, int start_money,
+		th_decision_func decide,
+		pool_decision_func pool_func,
+		void *data)
+{
+	assert(pool->num_occupants < POOL_MAX_PLAYERS);
+
+	struct pool_occupant* occ = &pool->occupants[pool->num_occupants];
+	snprintf(occ->name, TH_MAX_PLAYER_NAME_LEN, "%d", pool->num_occupants);
+	occ->money = start_money;
+	occ->table_pos = -1;
+	occ->pool_func = pool_func;
+	occ->decide = decide;
+	occ->decision_data = data;
+
+	pool->num_occupants++;
+}
+
+void pool_update_th(struct player_pool *pool, struct texas_holdem *th)
+{
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		if(th->players[i].decide) {
+			struct pool_occupant *occ = &pool->occupants[pool->sitters[i]];
+			occ->money = th->players[i].money;
+			printf("POOL: Player %s now has %d money.\n", occ->name, occ->money);
+		}
+	}
+
+	int free_spots = 0;
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		struct pool_occupant *occ = &pool->occupants[pool->sitters[i]];
+
+		if(!th->players[i].decide) {
+			assert(pool->sitters[i] == -1);
+			free_spots++;
+			printf("POOL: seat %d is free.\n", i);
+		}
+		else if(th->players[i].decide &&
+				 (th->players[i].money < th->small_blind * 2 ||
+					!occ->pool_func(occ->decision_data))) {
+			assert(occ->table_pos == i);
+			assert(pool->sitters[i] != -1);
+			th_remove_player(th, i);
+			free_spots++;
+			printf("POOL: Player %s got up from seat %d.\n", occ->name, i);
+			occ->table_pos = -1;
+			pool->sitters[i] = -1;
+		}
+	}
+
+	for(int i = 0; i < free_spots; i++) {
+		int start_attending = pool->next_attending;
+		do {
+			int this_pos = pool->next_attending;
+			struct pool_occupant *occ = &pool->occupants[this_pos];
+			pool->next_attending++;
+			if(pool->next_attending >= pool->num_occupants) {
+				pool->next_attending = 0;
+			}
+			if(occ->table_pos == -1 && occ->money >= th->small_blind * 2) {
+				int index = th_add_player(th, occ->name, occ->money, occ->decide, occ->decision_data);
+				printf("POOL: Player %s joins at seat %d.\n", occ->name, index);
+				assert(index != -1);
+				occ->table_pos = index;
+				pool->sitters[index] = this_pos;
+				break;
+			}
+		} while(pool->next_attending != start_attending);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	printf("-----\n");
@@ -900,22 +1033,27 @@ int main(int argc, char **argv)
 	printf("Random seed: %d\n", seed);
 	srand(seed);
 
+	struct player_pool pool;
+	int num_ais = 200;
+
+	struct ai_data ais[num_ais];
+
+	pool_init(&pool);
+	if(human) {
+		pool_add_player(&pool, start_money, human_decision, human_pool_func, &ais[0]);
+		num_ais--;
+	}
+	for(int i = 0; i < num_ais; i++) {
+		ais[i].num_rounds_played = 0;
+		pool_add_player(&pool, start_money, random_decision, ai_pool_func, &ais[i]);
+	}
+
 	struct texas_holdem th;
 	th_init(&th, 1);
-	th_add_player(&th, "Alice", start_money, human ? human_decision : random_decision);
-	th_add_player(&th, "Bob",   start_money, random_decision);
-	th_add_player(&th, "Carol", start_money, random_decision);
-	th_add_player(&th, "Ted",   start_money, random_decision);
-	th_add_player(&th, "1",     start_money, random_decision);
-	th_add_player(&th, "2",     start_money, random_decision);
-	th_add_player(&th, "3",     start_money, random_decision);
-	th_add_player(&th, "4",     start_money, random_decision);
-	th_add_player(&th, "5",     start_money, random_decision);
-	th_add_player(&th, "6",     start_money, random_decision);
+	pool_update_th(&pool, &th);
 
 	int num_rounds = 0;
 	while(1) {
-		th_print_money(&th, 1);
 		if(th_play_hand(&th))
 			break;
 		num_rounds++;
@@ -924,6 +1062,7 @@ int main(int argc, char **argv)
 			if(max_rounds <= 0)
 				break;
 		}
+		pool_update_th(&pool, &th);
 	}
 	printf("Final score after %d rounds:\n", num_rounds);
 	th_print_money(&th, 1);

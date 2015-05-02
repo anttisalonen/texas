@@ -5,6 +5,9 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <time.h>
+#include <sys/stat.h>
+
+#include <floatfann.h>
 
 enum card_suit {
 	SUIT_SPADES,
@@ -562,6 +565,46 @@ enum th_decision random_decision(const struct texas_holdem *th, int plnum, int r
 	}
 }
 
+struct ai_data {
+	struct fann *ann;
+	int num_rounds_played;
+	char filename[32];
+};
+
+enum th_decision ann_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
+{
+	fann_type *calc_out;
+	fann_type input[RANK_ACE + 1];
+
+	for(int j = RANK_TWO; j < RANK_ACE; j++) {
+		input[j] = 0.0f;
+		for(int i = 0; i < 2; i++) {
+			if(th->players[plnum].hole_cards[i].rank == j)
+				input[j] += 0.25f;
+		}
+		for(int i = 0; i < th->num_community_cards; i++) {
+			if(th->community_cards[i].rank == j)
+				input[j] += 0.25f;
+		}
+	}
+
+	input[RANK_ACE] = (2.0f * (th->pot / (1.0f + th->players[plnum].money * 0.5f))) - 1.0f;
+	if(input[RANK_ACE] > 1.0f)
+		input[RANK_ACE] = 1.0f;
+
+	struct ai_data *d = (struct ai_data *)data;
+	calc_out = fann_run(d->ann, input);
+
+	if(calc_out[0] > 0.333f)
+		return DEC_RAISE;
+	else if(raised_to > 0 && calc_out[0] < -0.333f)
+		return DEC_FOLD;
+	else if(raised_to)
+		return DEC_CALL;
+	else
+		return DEC_CHECK;
+}
+
 void th_init(struct texas_holdem* th, int small_blind)
 {
 	memset(th, 0x00, sizeof(*th));
@@ -896,10 +939,6 @@ int human_pool_func(void *data)
 	return 1;
 }
 
-struct ai_data {
-	int num_rounds_played;
-};
-
 int ai_pool_func(void *data)
 {
 	struct ai_data *d = (struct ai_data *)data;
@@ -940,12 +979,12 @@ void pool_init(struct player_pool *pool)
 void pool_add_player(struct player_pool *pool, int start_money,
 		th_decision_func decide,
 		pool_decision_func pool_func,
-		void *data)
+		void *data, const char *type)
 {
 	assert(pool->num_occupants < POOL_MAX_PLAYERS);
 
 	struct pool_occupant* occ = &pool->occupants[pool->num_occupants];
-	snprintf(occ->name, TH_MAX_PLAYER_NAME_LEN, "%d", pool->num_occupants);
+	snprintf(occ->name, TH_MAX_PLAYER_NAME_LEN, "%d (%s)", pool->num_occupants, type);
 	occ->money = start_money;
 	occ->table_pos = -1;
 	occ->pool_func = pool_func;
@@ -1016,37 +1055,81 @@ int main(int argc, char **argv)
 	int human = 0;
 	int start_money = 20;
 	int max_rounds = -1;
-	for(int i = 0; i < argc; i++) {
+	int num_random_ais = 10;
+	int num_ann_ais = 0;
+
+	int ann_brain_files_pos = 0;
+	char ann_brain_files[POOL_MAX_PLAYERS][32];
+	memset(ann_brain_files, 0x00, sizeof(ann_brain_files));
+
+	for(int i = 1; i < argc; i++) {
 		if(!strcmp(argv[i], "-s")) {
 			seed = atoi(argv[++i]);
 		}
-		if(!strcmp(argv[i], "--human")) {
+		else if(!strcmp(argv[i], "--human")) {
 			human = 1;
 		}
-		if(!strcmp(argv[i], "--money")) {
+		else if(!strcmp(argv[i], "--money")) {
 			start_money = atoi(argv[++i]);
 		}
-		if(!strcmp(argv[i], "--rounds")) {
+		else if(!strcmp(argv[i], "--rounds")) {
 			max_rounds = atoi(argv[++i]);
+		}
+		else if(!strcmp(argv[i], "--random")) {
+			num_random_ais = atoi(argv[++i]);
+		}
+		else if(!strcmp(argv[i], "--ann")) {
+			num_ann_ais = atoi(argv[++i]);
+		} else {
+			strncpy(ann_brain_files[ann_brain_files_pos++], argv[i], 32);
 		}
 	}
 	printf("Random seed: %d\n", seed);
 	srand(seed);
 
 	struct player_pool pool;
-	int num_ais = 200;
+	int num_players = num_random_ais + num_ann_ais + (human ? 1 : 0);
 
-	struct ai_data ais[num_ais];
+	struct ai_data ais[num_players];
+	memset(ais, 0x00, sizeof(ais));
+	int data_pos = 0;
 
 	pool_init(&pool);
 	if(human) {
-		pool_add_player(&pool, start_money, human_decision, human_pool_func, &ais[0]);
-		num_ais--;
+		ais[0].ann = NULL;
+		pool_add_player(&pool, start_money, human_decision, human_pool_func, NULL, "human");
+		data_pos++;
 	}
-	for(int i = 0; i < num_ais; i++) {
-		ais[i].num_rounds_played = 0;
-		pool_add_player(&pool, start_money, random_decision, ai_pool_func, &ais[i]);
+	for(int i = 0; i < num_random_ais; i++) {
+		ais[i + data_pos].num_rounds_played = 0;
+		ais[i + data_pos].ann = NULL;
+		pool_add_player(&pool, start_money, random_decision, ai_pool_func, &ais[i + data_pos], "random");
 	}
+	data_pos += num_random_ais;
+
+	for(int i = 0; i < num_ann_ais; i++) {
+		struct fann **ann = &ais[i + data_pos].ann;
+		const char *type = "fann";
+		if(ann_brain_files_pos) {
+			ann_brain_files_pos--;
+			*ann = fann_create_from_file(ann_brain_files[ann_brain_files_pos]);
+			type = ann_brain_files[ann_brain_files_pos];
+			strncpy(ais[i + data_pos].filename, ann_brain_files[ann_brain_files_pos], 32);
+		} else {
+			int num_layers = rand() % 2 + 2;
+			int num_input = RANK_ACE + 1;
+			int num_neurons_hidden = rand() % 2 + 2;
+			int num_output = 1;
+			*ann = fann_create_standard(num_layers, num_input,
+					num_neurons_hidden, num_output);
+		}
+		fann_randomize_weights(*ann, -1.0f, 1.0f);
+		fann_set_activation_function_hidden(*ann, FANN_SIGMOID_SYMMETRIC);
+		fann_set_activation_function_output(*ann, FANN_SIGMOID_SYMMETRIC);
+		ais[i + data_pos].num_rounds_played = 0;
+		pool_add_player(&pool, start_money, ann_decision, ai_pool_func, &ais[i + data_pos], type);
+	}
+
 
 	struct texas_holdem th;
 	th_init(&th, 1);
@@ -1066,14 +1149,30 @@ int main(int argc, char **argv)
 	}
 	printf("Final score after %d rounds:\n", num_rounds);
 	th_print_money(&th, 1);
-
-#if 0
-	for(int i = 0; i < 4; i++) {
-		deal_poker_hand(&d, &players[i].play);
-		get_poker_play(&plays[i]);
-		print_poker_play(&plays[i]);
+	int save_pos = 0;
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		if(th.players[i].money && th.players[i].decision_data) {
+			struct ai_data *ai = (struct ai_data *)th.players[i].decision_data;
+			if(ai->ann && ai->filename[0] == '\0') {
+				char filename[32];
+				while(1) {
+					char randstr[8];
+					memset(randstr, 0x00, sizeof(randstr));
+					for(int j = 0; j < 4; j++) {
+						randstr[j] = rand() % 20 + 'a';
+					}
+					snprintf(filename, 32, "ai_%d_%s.net",
+							save_pos++, randstr);
+					struct stat buffer;
+					if(stat(filename, &buffer) != 0) {
+						break;
+					}
+				}
+				fann_save(ai->ann, filename);
+				printf("Saved file %s.\n", filename);
+			}
+		}
 	}
-#endif
 
 	return 0;
 }

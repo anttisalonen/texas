@@ -4,7 +4,7 @@
 
 #define TH_MAX_PLAYERS 10
 
-#define TH_MAX_PLAYER_NAME_LEN 32
+#define TH_MAX_PLAYER_NAME_LEN 8
 
 enum th_decision {
 	DEC_CHECK,
@@ -43,6 +43,7 @@ struct texas_holdem {
 enum th_event_type {
 	TH_EVENT_DECISION,
 	TH_EVENT_BET_ROUND_BEGIN,
+	TH_EVENT_END_OF_ROUND,
 	TH_EVENT_WIN
 };
 

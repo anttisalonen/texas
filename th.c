@@ -285,10 +285,13 @@ static void th_showdown(struct texas_holdem *th)
 	}
 
 	struct th_event ev;
-	ev.type = TH_EVENT_WIN;
+	ev.type = TH_EVENT_END_OF_ROUND;
 	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		ev.best_hands[i] = best_hands[i];
 	}
+	th->event_callback(th, &ev);
+
+	ev.type = TH_EVENT_WIN;
 	ev.winner_hand_name = best_hands[best_player].cat->name;
 
 	if(!tied_players) {

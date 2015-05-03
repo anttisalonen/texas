@@ -25,12 +25,26 @@ struct player_pool {
 	int next_attending;
 };
 
+enum pool_seat_status {
+	POOL_SEAT_FREED,
+	POOL_SEAT_TAKEN,
+};
+
+struct pool_seat_update {
+	enum pool_seat_status status;
+	const char *player;
+};
+
+struct pool_update {
+	struct pool_seat_update seats[TH_MAX_PLAYERS];
+};
+
 void pool_init(struct player_pool *pool);
 void pool_add_player(struct player_pool *pool, int start_money,
 		th_decision_func decide,
 		pool_decision_func pool_func,
 		pool_save_func save_func,
 		void *data, const char *type);
-void pool_update_th(struct player_pool *pool, struct texas_holdem *th);
+void pool_update_th(struct player_pool *pool, struct texas_holdem *th, struct pool_update *update);
 int pool_save_current_players(struct player_pool *pool, struct texas_holdem *th);
 

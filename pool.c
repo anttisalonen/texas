@@ -32,13 +32,13 @@ void pool_add_player(struct player_pool *pool, int start_money,
 	pool->num_occupants++;
 }
 
-void pool_update_th(struct player_pool *pool, struct texas_holdem *th)
+void pool_update_th(struct player_pool *pool, struct texas_holdem *th, struct pool_update *update)
 {
+	memset(update, 0x00, sizeof(*update));
 	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 		if(th->players[i].decide) {
 			struct pool_occupant *occ = &pool->occupants[pool->sitters[i]];
 			occ->money = th->players[i].money;
-			printf("POOL: Player %s now has %d money.\n", occ->name, occ->money);
 		}
 	}
 
@@ -49,7 +49,6 @@ void pool_update_th(struct player_pool *pool, struct texas_holdem *th)
 		if(!th->players[i].decide) {
 			assert(pool->sitters[i] == -1);
 			free_spots++;
-			printf("POOL: seat %d is free.\n", i);
 		}
 		else if(th->players[i].decide &&
 				 (th->players[i].money < th->small_blind * 2 ||
@@ -58,7 +57,8 @@ void pool_update_th(struct player_pool *pool, struct texas_holdem *th)
 			assert(pool->sitters[i] != -1);
 			th_remove_player(th, i);
 			free_spots++;
-			printf("POOL: Player %s got up from seat %d.\n", occ->name, i);
+			update->seats[i].status = POOL_SEAT_FREED;
+			update->seats[i].player = occ->name;
 			occ->table_pos = -1;
 			pool->sitters[i] = -1;
 		}
@@ -77,7 +77,8 @@ void pool_update_th(struct player_pool *pool, struct texas_holdem *th)
 				int index = th_add_player(th, occ->name, occ->money,
 						occ->decide,
 						occ->decision_data);
-				printf("POOL: Player %s joins at seat %d.\n", occ->name, index);
+				update->seats[index].status = POOL_SEAT_TAKEN;
+				update->seats[index].player = occ->name;
 				assert(index != -1);
 				occ->table_pos = index;
 				pool->sitters[index] = this_pos;

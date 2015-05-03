@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <poll.h>
+
+#include <ncurses.h>
 
 #include "cards.h"
 #include "th.h"
@@ -13,7 +16,18 @@
 #include "ann1.h"
 #include "ai_random.h"
 
-void print_cards(const struct card *cards, int num_cards)
+#define PROMPT_Y 30
+#define PROMPT_X 1
+
+static int human = 0;
+static int speed = 5;
+
+enum game_ui {
+	UI_NCURSES,
+	UI_TEXT
+};
+
+static void print_cards(int y, int x, const struct card *cards, int num_cards)
 {
 	static const char* ranks[] = {
 		"2",
@@ -32,41 +46,74 @@ void print_cards(const struct card *cards, int num_cards)
 	};
 
 	static const char* suits[] = {
-		"♠",
-		"♥",
-		"♦",
-		"♣"
+		"Spades",
+		"Hearts",
+		"Diamonds",
+		"Clubs"
 	};
 
 	for(int i = 0; i < num_cards; i++) {
 		const char* rank = ranks[cards[i].rank];
 		const char* suit = suits[cards[i].suit];
-		printf("%s%s ", rank, suit);
+		mvprintw(y + i, x, "%s of %s", rank, suit);
 	}
-	printf("\n");
 }
 
-void print_money(const struct texas_holdem *th, int all)
+static void print_community_cards(const struct texas_holdem *th)
+{
+	print_cards(10, 11, th->community_cards, th->num_community_cards);
+}
+
+static void print_pot(const struct texas_holdem *th)
+{
+	mvprintw(16, 16, "Pot: %d", th->pot);
+}
+
+static enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data);
+
+static void get_player_coordinates(int plnum, int *y, int *x)
+{
+	*x = 5 + (plnum % 5) * 16;
+	*y = plnum < 5 ? 2 : 20;
+}
+
+static void print_player(const struct texas_holdem *th, int player_index, int show_all_holes)
+{
+	int x, y;
+	get_player_coordinates(player_index, &y, &x);
+
+	mvprintw(y,     x, "%s", th->players[player_index].name);
+	mvprintw(y + 1, x, "Money: %d   ", th->players[player_index].money);
+	if(show_all_holes || th->players[player_index].decide == human_decision) {
+		print_cards(y + 2, x, th->players[player_index].hole_cards, 2);
+	}
+	if(!th->players[player_index].active) {
+		mvprintw(y + 4, x, "folds");
+	}
+}
+
+static void print_players(const struct texas_holdem *th, int show_all_holes)
 {
 	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-		if(th->players[i].decide && (all || th->players[i].active))
-			printf("%s: %d\n", th->players[i].name, th->players[i].money);
+		if(!th->players[i].decide)
+			continue;
+
+		print_player(th, i, show_all_holes);
 	}
 }
 
 static enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
 {
 	while(1) {
-		print_money(th, 0);
-		printf("Community cards:\n");
-		print_cards(th->community_cards, th->num_community_cards);
-		printf("Your cards:\n");
-		print_cards(th->players[plnum].hole_cards, 2);
+		print_players(th, !human);
+		print_community_cards(th);
 
 		if(raised_to)
-			printf("(f)old, c(a)ll, (r)aise?\n");
+			mvprintw(PROMPT_Y, PROMPT_X, "(f)old, c(a)ll, (r)aise?\n");
 		else
-			printf("(c)heck, (r)aise?\n");
+			mvprintw(PROMPT_Y, PROMPT_X, "(c)heck, (r)aise?\n");
+		refresh();
+
 		char buf[256];
 		memset(buf, 0x00, sizeof(buf));
 		read(STDIN_FILENO, buf, 256);
@@ -85,9 +132,6 @@ static enum th_decision human_decision(const struct texas_holdem *th, int plnum,
 				break;
 			case 'r':
 				return DEC_RAISE;
-			case 'q':
-				exit(0);
-				break;
 			default:
 				break;
 		}
@@ -99,76 +143,93 @@ static int human_pool_func(void *data)
 	return 1;
 }
 
+void event_auto_callback(const struct texas_holdem *th, const struct th_event *ev)
+{
+}
+
 void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 {
+	int x, y;
+	get_player_coordinates(ev->player_index, &y, &x);
+	clear();
+	print_players(th, !human);
+	print_community_cards(th);
+	print_pot(th);
+
 	switch(ev->type) {
 		case TH_EVENT_DECISION:
 			switch(ev->decision) {
 				case DEC_CHECK:
-					printf("%s checks.\n", th->players[ev->player_index].name);
+					mvprintw(y + 4, x, "checks");
 					break;
 
 				case DEC_FOLD:
-					printf("%s folds.\n", th->players[ev->player_index].name);
+					mvprintw(y + 4, x, "folds");
 					break;
 
 				case DEC_CALL:
-					printf("%s calls.\n", th->players[ev->player_index].name);
+					mvprintw(y + 4, x, "calls");
 					break;
 
 				case DEC_RAISE:
-					printf("%s raises by %d. Pot is now %d.\n",
-							th->players[ev->player_index].name,
-							ev->raise_amount,
-							th->pot);
+					mvprintw(y + 4, x, "raises by %d", ev->raise_amount);
 					break;
+			}
+			break;
 
+		case TH_EVENT_END_OF_ROUND:
+			for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+				if(!th->players[i].active)
+					continue;
+				print_player(th, i, 1);
+				poll(NULL, 0, 100 * speed);
+				refresh();
+				get_player_coordinates(i, &y, &x);
+				mvprintw(y + 4, x, "%s", ev->best_hands[i].cat->name);
+				poll(NULL, 0, 100 * speed);
+				refresh();
 			}
 			break;
 
 		case TH_EVENT_WIN:
-			for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-				if(!th->players[i].active)
-					continue;
-				printf("%s has %s (0x%08lx):\n", th->players[i].name,
-						ev->best_hands[i].cat->name, ev->best_hands[i].score);
-				print_cards(ev->best_hands[i].hand.cards, 5);
+			for(int i = 0; i < ev->num_winners; i++) {
+				get_player_coordinates(ev->winner_index[i], &y, &x);
+				mvprintw(y + 5, x, "wins %d",
+						ev->winner_money[i]);
 			}
 
-			if(ev->num_winners == 1) {
-				printf("%s wins the pot of %d with %s.\n", th->players[ev->winner_index[0]].name,
-						th->pot,
-						ev->winner_hand_name);
-			} else {
-				printf("The following players split the pot of %d with %s:\n",
-						th->pot,
-						ev->winner_hand_name);
-				for(int i = 0; i < ev->num_winners; i++) {
-					printf("\t%s\n", th->players[ev->winner_index[i]].name);
-				}
+			poll(NULL, 0, 100 * speed);
+			refresh();
+			{
+				mvprintw(PROMPT_Y, PROMPT_X, "Hit Enter to continue");
+				char buf[256];
+				refresh();
+				read(STDIN_FILENO, buf, 256);
 			}
 			break;
 
 		case TH_EVENT_BET_ROUND_BEGIN:
-			printf("Community cards:\n");
-			print_cards(th->community_cards, th->num_community_cards);
-			print_money(th, 0);
+			print_community_cards(th);
+			print_players(th, !human);
+			poll(NULL, 0, 100 * speed);
+			refresh();
 			break;
 	}
+	poll(NULL, 0, 100 * speed);
+	refresh();
 }
 
 
 int main(int argc, char **argv)
 {
-	printf("-----\n");
-
 	int seed = time(NULL);
-	int human = 0;
 	int start_money = 20;
 	int max_rounds = -1;
 	int num_random_ais = 10;
 	int num_ann_ais = 0;
 	int do_save = 0;
+
+	enum game_ui ui = UI_NCURSES;
 
 	int ann_params_pos = 0;
 	char ann_params[POOL_MAX_PLAYERS][256];
@@ -199,8 +260,31 @@ int main(int argc, char **argv)
 		else if(!strcmp(argv[i], "--ann_param")) {
 			strncpy(ann_params[ann_params_pos++], argv[++i], 256);
 		}
+		else if(!strcmp(argv[i], "--speed")) {
+			speed = atoi(argv[++i]);
+		}
+		else if(!strcmp(argv[i], "--ui")) {
+			ui = atoi(argv[++i]);
+		}
 	}
-	printf("Random seed: %d\n", seed);
+
+	switch(ui) {
+		case UI_NCURSES:
+			initscr();
+			noecho();
+			curs_set(0);
+			mvprintw(1, 0, "Random seed: %d", seed);
+			break;
+
+		case UI_TEXT:
+			if(human) {
+				fprintf(stderr, "Cannot play in text UI mode.\n");
+				exit(1);
+			}
+			printf("Random seed: %d\n", seed);
+			break;
+	}
+
 	srand(seed);
 
 	struct player_pool pool;
@@ -235,8 +319,10 @@ int main(int argc, char **argv)
 
 
 	struct texas_holdem th;
-	th_init(&th, 1, event_callback);
-	pool_update_th(&pool, &th);
+	th_init(&th, 1, ui == UI_NCURSES ? event_callback : event_auto_callback);
+
+	struct pool_update pupd;
+	pool_update_th(&pool, &th, &pupd);
 
 	int num_rounds = 0;
 	while(1) {
@@ -248,13 +334,31 @@ int main(int argc, char **argv)
 			if(max_rounds <= 0)
 				break;
 		}
-		pool_update_th(&pool, &th);
+		pool_update_th(&pool, &th, &pupd);
+		if(human) {
+			for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+				if(pupd.seats[i].player &&
+						pupd.seats[i].status == POOL_SEAT_FREED &&
+						!strcmp(pupd.seats[i].player, "0 (huma")) {
+					human = 0;
+				}
+			}
+		}
 	}
-	printf("Final score after %d rounds:\n", num_rounds);
-	print_money(&th, 1);
 
 	if(do_save) {
 		pool_save_current_players(&pool, &th);
+	}
+
+	if(ui == UI_NCURSES) {
+		endwin();
+	} else {
+		printf("Final score after %d rounds:\n", num_rounds);
+		for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+			if(th.players[i].decide) {
+				printf("%s: %d\n", th.players[i].name, th.players[i].money);
+			}
+		}
 	}
 
 	return 0;

@@ -58,7 +58,6 @@ struct poker_hand_category {
 struct card deal_card(struct card_deck* d);
 void shuffle_card_deck(struct card_deck* d);
 void init_card_deck(struct card_deck* d);
-void print_cards(const struct card *cards, int num_cards);
 const struct poker_hand_category* find_score(const struct poker_hand* h, uint64_t* score);
 void sort_poker_hand(struct poker_hand *h);
 

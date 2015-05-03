@@ -13,11 +13,53 @@
 #include "ann1.h"
 #include "ai_random.h"
 
+void print_cards(const struct card *cards, int num_cards)
+{
+	static const char* ranks[] = {
+		"2",
+		"3",
+		"4",
+		"5",
+		"6",
+		"7",
+		"8",
+		"9",
+		"10",
+		"J",
+		"Q",
+		"K",
+		"A"
+	};
+
+	static const char* suits[] = {
+		"♠",
+		"♥",
+		"♦",
+		"♣"
+	};
+
+	for(int i = 0; i < num_cards; i++) {
+		const char* rank = ranks[cards[i].rank];
+		const char* suit = suits[cards[i].suit];
+		printf("%s%s ", rank, suit);
+	}
+	printf("\n");
+}
+
+void print_money(const struct texas_holdem *th, int all)
+{
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		if(th->players[i].decide && (all || th->players[i].active))
+			printf("%s: %d\n", th->players[i].name, th->players[i].money);
+	}
+}
+
 static enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
 {
 	while(1) {
-		th_print_money(th, 0);
-		th_print_community_cards(th);
+		print_money(th, 0);
+		printf("Community cards:\n");
+		print_cards(th->community_cards, th->num_community_cards);
 		printf("Your cards:\n");
 		print_cards(th->players[plnum].hole_cards, 2);
 
@@ -55,6 +97,64 @@ static enum th_decision human_decision(const struct texas_holdem *th, int plnum,
 static int human_pool_func(void *data)
 {
 	return 1;
+}
+
+void event_callback(const struct texas_holdem *th, const struct th_event *ev)
+{
+	switch(ev->type) {
+		case TH_EVENT_DECISION:
+			switch(ev->decision) {
+				case DEC_CHECK:
+					printf("%s checks.\n", th->players[ev->player_index].name);
+					break;
+
+				case DEC_FOLD:
+					printf("%s folds.\n", th->players[ev->player_index].name);
+					break;
+
+				case DEC_CALL:
+					printf("%s calls.\n", th->players[ev->player_index].name);
+					break;
+
+				case DEC_RAISE:
+					printf("%s raises by %d. Pot is now %d.\n",
+							th->players[ev->player_index].name,
+							ev->raise_amount,
+							th->pot);
+					break;
+
+			}
+			break;
+
+		case TH_EVENT_WIN:
+			for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+				if(!th->players[i].active)
+					continue;
+				printf("%s has %s (0x%08lx):\n", th->players[i].name,
+						ev->best_hands[i].cat->name, ev->best_hands[i].score);
+				print_cards(ev->best_hands[i].hand.cards, 5);
+			}
+
+			if(ev->num_winners == 1) {
+				printf("%s wins the pot of %d with %s.\n", th->players[ev->winner_index[0]].name,
+						th->pot,
+						ev->winner_hand_name);
+			} else {
+				printf("The following players split the pot of %d with %s:\n",
+						th->pot,
+						ev->winner_hand_name);
+				for(int i = 0; i < ev->num_winners; i++) {
+					printf("\t%s\n", th->players[ev->winner_index[i]].name);
+				}
+			}
+			break;
+
+		case TH_EVENT_BET_ROUND_BEGIN:
+			printf("Community cards:\n");
+			print_cards(th->community_cards, th->num_community_cards);
+			print_money(th, 0);
+			break;
+	}
 }
 
 
@@ -135,7 +235,7 @@ int main(int argc, char **argv)
 
 
 	struct texas_holdem th;
-	th_init(&th, 1);
+	th_init(&th, 1, event_callback);
 	pool_update_th(&pool, &th);
 
 	int num_rounds = 0;
@@ -151,7 +251,7 @@ int main(int argc, char **argv)
 		pool_update_th(&pool, &th);
 	}
 	printf("Final score after %d rounds:\n", num_rounds);
-	th_print_money(&th, 1);
+	print_money(&th, 1);
 
 	if(do_save) {
 		pool_save_current_players(&pool, &th);

@@ -7,41 +7,11 @@
 
 #include "th.h"
 
-static const char *dec_to_str(enum th_decision d)
-{
-	switch(d) {
-		case DEC_CHECK:
-			return "checks";
-		case DEC_FOLD:
-			return "folds";
-		case DEC_CALL:
-			return "calls";
-		case DEC_RAISE:
-			return "raises";
-		default:
-			return "?";
-	}
-}
-
-
-void th_print_money(const struct texas_holdem *th, int all)
-{
-	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-		if(th->players[i].decide && (all || th->players[i].active))
-			printf("%s: %d\n", th->players[i].name, th->players[i].money);
-	}
-}
-
-void th_print_community_cards(const struct texas_holdem *th)
-{
-	printf("Community cards:\n");
-	print_cards(th->community_cards, th->num_community_cards);
-}
-
-void th_init(struct texas_holdem* th, int small_blind)
+void th_init(struct texas_holdem* th, int small_blind, th_event_callback evc)
 {
 	memset(th, 0x00, sizeof(*th));
 	th->small_blind = small_blind;
+	th->event_callback = evc;
 }
 
 int th_add_player(struct texas_holdem* th, const char* name, int money, th_decision_func fun, void *decision_data)
@@ -123,9 +93,6 @@ static void th_bet(struct texas_holdem* th, unsigned int plnum, int bet)
 	th->players[plnum].money -= bet;
 	th->pot += bet;
 	th->players[plnum].paid_bet += bet;
-	printf("%s posts a bet of %d. Pot is now %d.\n",
-			th->players[plnum].name, bet,
-			th->pot);
 }
 
 static void th_deal_hole_cards(struct texas_holdem* th)
@@ -144,7 +111,6 @@ static int th_get_decision(struct texas_holdem *th, int plnum, int raised_to, in
 
 	enum th_decision dec = th->players[plnum].decide(th, plnum, raised_to - th->players[plnum].paid_bet,
 			th->players[plnum].decision_data);
-	printf(" *** %s %s\n", th->players[plnum].name, dec_to_str(dec));
 
 	switch(dec) {
 		case DEC_CHECK:
@@ -164,6 +130,15 @@ static int th_get_decision(struct texas_holdem *th, int plnum, int raised_to, in
 			raised_to += bet_amount;
 			break;
 	}
+
+	struct th_event ev;
+	ev.type = TH_EVENT_DECISION;
+	ev.decision = dec;
+	if(dec == DEC_RAISE)
+		ev.raise_amount = raised_to;
+	ev.player_index = plnum;
+	th->event_callback(th, &ev);
+
 	return raised_to;
 }
 
@@ -177,7 +152,6 @@ static void th_betting_round(struct texas_holdem *th, int first_in_line, unsigne
 
 	int raised_to;
 
-	th_print_money(th, 0);
 	raised_to = min_bet;
 	min_bet = 0;
 	int first_round = 1;
@@ -231,7 +205,6 @@ static void th_deal_community(struct texas_holdem *th, int num_cards)
 		th->community_cards[th->num_community_cards] = c;
 		th->num_community_cards++;
 	}
-	th_print_community_cards(th);
 }
 
 struct hand_permutations {
@@ -309,39 +282,51 @@ static void th_showdown(struct texas_holdem *th)
 			}
 		}
 		sort_poker_hand(&best_hands[pl].hand);
-		printf("%s has %s (0x%08lx):\n", th->players[pl].name, best_hands[pl].cat->name, best_hands[pl].score);
-		print_cards(best_hands[pl].hand.cards, 5);
 	}
 
+	struct th_event ev;
+	ev.type = TH_EVENT_WIN;
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		ev.best_hands[i] = best_hands[i];
+	}
+	ev.winner_hand_name = best_hands[best_player].cat->name;
+
 	if(!tied_players) {
-		printf("%s wins the pot of %d with %s.\n", th->players[best_player].name,
-				th->pot,
-				best_hands[best_player].cat->name);
 		th->players[best_player].money += th->pot;
+		ev.num_winners = 1;
+		ev.winner_index[0] = best_player;
+		ev.winner_money[0] = th->pot;
 	} else {
 		int num_tied_players = 0;
-		printf("The following players split the pot of %d with %s:\n",
-				th->pot,
-				best_hands[best_player].cat->name);
 		for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 			if((1 << i) & tied_players) {
-				printf("\t%s\n", th->players[i].name);
 				num_tied_players++;
 			}
 		}
+
+		ev.num_winners = num_tied_players;
+		int winner_entry = 0;
+
 		int split_pot = th->pot / num_tied_players;
 		for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 			if((1 << i) & tied_players) {
 				num_tied_players--;
+				ev.winner_index[winner_entry] = i;
 				if(num_tied_players == 0) {
 					th->players[i].money += th->pot;
+					ev.winner_money[winner_entry] = th->pot;
 				} else {
 					th->players[i].money += split_pot;
 					th->pot -= split_pot;
+					ev.winner_money[winner_entry] = split_pot;
 				}
+				winner_entry++;
 			}
 		}
+
 	}
+
+	th->event_callback(th, &ev);
 }
 
 int th_play_hand(struct texas_holdem *th)
@@ -352,10 +337,15 @@ int th_play_hand(struct texas_holdem *th)
 	th_deal_hole_cards(th);
 	th_first_betting_round(th);
 	th_deal_community(th, 3);
+	struct th_event ev;
+	ev.type = TH_EVENT_BET_ROUND_BEGIN;
+	th->event_callback(th, &ev);
 	th_betting_round(th, th_pl_index(th, 1), th->small_blind * 2, 0);
 	th_deal_community(th, 1);
+	th->event_callback(th, &ev);
 	th_betting_round(th, th_pl_index(th, 1), th->small_blind * 4, 0);
 	th_deal_community(th, 1);
+	th->event_callback(th, &ev);
 	th_betting_round(th, th_pl_index(th, 1), th->small_blind * 4, 0);
 
 	th_showdown(th);

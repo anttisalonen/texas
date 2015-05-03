@@ -308,37 +308,4 @@ struct card deal_card(struct card_deck* d)
 	return c;
 }
 
-void print_cards(const struct card *cards, int num_cards)
-{
-	static const char* ranks[] = {
-		"2",
-		"3",
-		"4",
-		"5",
-		"6",
-		"7",
-		"8",
-		"9",
-		"10",
-		"J",
-		"Q",
-		"K",
-		"A"
-	};
-
-	static const char* suits[] = {
-		"♠",
-		"♥",
-		"♦",
-		"♣"
-	};
-
-	for(int i = 0; i < num_cards; i++) {
-		const char* rank = ranks[cards[i].rank];
-		const char* suit = suits[cards[i].suit];
-		printf("%s%s ", rank, suit);
-	}
-	printf("\n");
-}
-
 

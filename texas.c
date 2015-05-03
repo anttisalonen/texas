@@ -143,6 +143,28 @@ static int human_pool_func(void *data)
 	return 1;
 }
 
+void print_end_of_round(const struct texas_holdem *th, const struct th_event *ev, int wait)
+{
+	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+		if(!th->players[i].active)
+			continue;
+		print_player(th, i, 1);
+		if(wait) {
+			poll(NULL, 0, 100 * speed);
+			refresh();
+		}
+		int y, x;
+		get_player_coordinates(i, &y, &x);
+		mvprintw(y + 4, x, "%s", ev->best_hands[i].cat->name);
+		if(wait) {
+			poll(NULL, 0, 100 * speed);
+			refresh();
+		}
+	}
+	if(!wait)
+		refresh();
+}
+
 void event_auto_callback(const struct texas_holdem *th, const struct th_event *ev)
 {
 }
@@ -178,20 +200,11 @@ void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 			break;
 
 		case TH_EVENT_END_OF_ROUND:
-			for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-				if(!th->players[i].active)
-					continue;
-				print_player(th, i, 1);
-				poll(NULL, 0, 100 * speed);
-				refresh();
-				get_player_coordinates(i, &y, &x);
-				mvprintw(y + 4, x, "%s", ev->best_hands[i].cat->name);
-				poll(NULL, 0, 100 * speed);
-				refresh();
-			}
+			print_end_of_round(th, ev, 1);
 			break;
 
 		case TH_EVENT_WIN:
+			print_end_of_round(th, ev, 0);
 			for(int i = 0; i < ev->num_winners; i++) {
 				get_player_coordinates(ev->winner_index[i], &y, &x);
 				mvprintw(y + 5, x, "wins %d",

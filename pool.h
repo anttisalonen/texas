@@ -2,7 +2,7 @@
 
 #include "th.h"
 
-#define POOL_MAX_PLAYERS 10240
+#define POOL_MAX_PLAYERS 128
 
 typedef int (*pool_decision_func)(void *data);
 typedef int (*pool_save_func)(void *data);

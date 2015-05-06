@@ -13,8 +13,7 @@
 #include "cards.h"
 #include "th.h"
 #include "pool.h"
-#include "ann1.h"
-#include "ai_random.h"
+#include "ai_config.h"
 
 #define PROMPT_Y 30
 #define PROMPT_X 1
@@ -232,21 +231,31 @@ void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 	refresh();
 }
 
+int ai_ind(const char *n)
+{
+	int index = get_ai_config_index(n);
+	if(index == -1) {
+		fprintf(stderr, "Unknown AI: %s\n", n);
+		exit(1);
+	}
+	return index;
+}
 
 int main(int argc, char **argv)
 {
 	int seed = time(NULL);
 	int start_money = 20;
 	int max_rounds = -1;
-	int num_random_ais = 10;
-	int num_ann_ais = 0;
 	int do_save = 0;
 
 	enum game_ui ui = UI_NCURSES;
 
-	int ann_params_pos = 0;
-	char ann_params[POOL_MAX_PLAYERS][256];
-	memset(ann_params, 0x00, sizeof(ann_params));
+	int ai_params_pos[32];
+	memset(ai_params_pos, 0x00, sizeof(ai_params_pos));
+	char ai_filenames[32][POOL_MAX_PLAYERS][256];
+	memset(ai_filenames, 0x00, sizeof(ai_filenames));
+	int num_ais[32];
+	memset(num_ais, 0x00, sizeof(num_ais));
 
 	for(int i = 1; i < argc; i++) {
 		if(!strcmp(argv[i], "-s")) {
@@ -261,17 +270,16 @@ int main(int argc, char **argv)
 		else if(!strcmp(argv[i], "--rounds")) {
 			max_rounds = atoi(argv[++i]);
 		}
-		else if(!strcmp(argv[i], "--random")) {
-			num_random_ais = atoi(argv[++i]);
+		else if(!strncmp(argv[i], "--ai_num_", 9)) {
+			int ind = ai_ind(argv[i] + 9);
+			num_ais[ind] = atoi(argv[++i]);
 		}
-		else if(!strcmp(argv[i], "--ann")) {
-			num_ann_ais = atoi(argv[++i]);
+		else if(!strncmp(argv[i], "--ai_file_", 10)) {
+			int ind = ai_ind(argv[i] + 10);
+			strncpy(ai_filenames[ind][ai_params_pos[ind]++], argv[++i], 256);
 		}
 		else if(!strcmp(argv[i], "--save")) {
 			do_save = 1;
-		}
-		else if(!strcmp(argv[i], "--ann_param")) {
-			strncpy(ann_params[ann_params_pos++], argv[++i], 256);
 		}
 		else if(!strcmp(argv[i], "--speed")) {
 			speed = atoi(argv[++i]);
@@ -315,21 +323,25 @@ int main(int argc, char **argv)
 		pool_add_player(&pool, start_money, human_decision, human_pool_func, NULL, NULL, "human");
 		data_pos++;
 	}
-	for(int i = 0; i < num_random_ais; i++) {
-		random_data_init(&ais[i + data_pos]);
-		pool_add_player(&pool, start_money, random_decision, random_pool_func, NULL, &ais[i + data_pos], "random");
-	}
-	data_pos += num_random_ais;
 
-	for(int i = 0; i < num_ann_ais; i++) {
-		ann_data_init(&ais[i + data_pos], ann_params[i]);
-		const char *ann_type = ann_get_type(&ais[i + data_pos]);
-		char type[32];
-		memset(type, 0x00, sizeof(type));
-		snprintf(type, 31, "fann (%s)", ann_type);
-		pool_add_player(&pool, start_money, ann_decision, ann_pool_func, ann_save_func, &ais[i + data_pos], type);
-	}
+	{
+		int ind = 0;
+		while(1) {
+			struct ai_config *conf = get_ai_config_by_index(ind);
+			if(!conf->ai_name)
+				break;
 
+			for(int i = 0; i < num_ais[ind]; i++) {
+				conf->ai_init_func(&ais[i + data_pos],
+						ai_filenames[ind][i]);
+				pool_add_player(&pool, start_money,
+						conf->ai_decision_func, conf->ai_pool_decision_func,
+						conf->ai_save_func, &ais[i + data_pos], conf->ai_name);
+			}
+			data_pos += num_ais[ind];
+			ind++;
+		}
+	}
 
 	struct texas_holdem th;
 	th_init(&th, 1, ui == UI_NCURSES ? event_callback : event_auto_callback);

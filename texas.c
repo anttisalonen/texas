@@ -286,6 +286,9 @@ int main(int argc, char **argv)
 		}
 		else if(!strcmp(argv[i], "--ui")) {
 			ui = atoi(argv[++i]);
+		} else {
+			fprintf(stderr, "Unknown argument '%s'.\n", argv[i]);
+			exit(1);
 		}
 	}
 

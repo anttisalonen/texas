@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <poll.h>
 
 #include <ncurses.h>
@@ -241,6 +242,38 @@ int ai_ind(const char *n)
 	return index;
 }
 
+static void ai_create_filename(char *to, const char *pattern)
+{
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	snprintf(to, 255, "ais/%s_%02d%02d%02d%04ld",
+			pattern, tm.tm_hour,
+			tm.tm_min, tm.tm_sec, tv.tv_usec / 1000);
+}
+
+static void modify_ai_filename(char *to)
+{
+	char buf[256];
+	char *dot = strrchr(to, '_');
+	assert(dot);
+	*dot = '\0';
+	int ret = sscanf(to, "ais/%s", buf);
+	assert(ret == 1);
+	ai_create_filename(to, buf);
+}
+
+static void generate_ai_filename(char *filename)
+{
+	char randstr[9];
+	memset(randstr, 0x00, sizeof(randstr));
+	for(int j = 0; j < 8; j++) {
+		randstr[j] = rand() % 20 + 'a';
+	}
+	ai_create_filename(filename, randstr);
+}
+
 int main(int argc, char **argv)
 {
 	int seed = time(NULL);
@@ -323,7 +356,7 @@ int main(int argc, char **argv)
 
 	pool_init(&pool);
 	if(human) {
-		pool_add_player(&pool, start_money, human_decision, human_pool_func, NULL, NULL, "human");
+		pool_add_player(&pool, start_money, human_decision, human_pool_func, NULL, "human");
 		data_pos++;
 	}
 
@@ -335,11 +368,26 @@ int main(int argc, char **argv)
 				break;
 
 			for(int i = 0; i < num_ais[ind]; i++) {
-				conf->ai_init_func(&ais[i + data_pos],
+				if(!ai_filenames[ind][i][0]) {
+					generate_ai_filename(ai_filenames[ind][i]);
+					conf->ai_init_func(&ais[i + data_pos]);
+				} else {
+					assert(conf->ai_load_func);
+					printf("Loading AI type \"%s\" from %s\n",
+							conf->ai_name,
+							ai_filenames[ind][i]);
+					conf->ai_load_func(&ais[i + data_pos],
 						ai_filenames[ind][i]);
+					if(conf->ai_modify_func && rand() % 2 == 0) {
+						printf("Modifying %s\n",
+								ai_filenames[ind][i]);
+						modify_ai_filename(ai_filenames[ind][i]);
+						conf->ai_modify_func(&ais[i + data_pos], 0.01f);
+					}
+				}
 				pool_add_player(&pool, start_money,
 						conf->ai_decision_func, conf->ai_pool_decision_func,
-						conf->ai_save_func, &ais[i + data_pos], conf->ai_name);
+						&ais[i + data_pos], conf->ai_name);
 			}
 			data_pos += num_ais[ind];
 			ind++;
@@ -375,7 +423,22 @@ int main(int argc, char **argv)
 	}
 
 	if(do_save) {
-		pool_save_current_players(&pool, &th);
+		int ind = 0;
+		data_pos = 0;
+		while(1) {
+			struct ai_config *conf = get_ai_config_by_index(ind);
+			if(!conf->ai_name)
+				break;
+
+			for(int i = 0; i < num_ais[ind]; i++) {
+				printf("Saving AI type \"%s\" to %s\n", conf->ai_name,
+						ai_filenames[ind][i]);
+				conf->ai_save_func(&ais[i + data_pos],
+						ai_filenames[ind][i]);
+			}
+			data_pos += num_ais[ind];
+			ind++;
+		}
 	}
 
 	if(ui == UI_NCURSES) {

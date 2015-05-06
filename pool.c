@@ -15,7 +15,6 @@ void pool_init(struct player_pool *pool)
 void pool_add_player(struct player_pool *pool, int start_money,
 		th_decision_func decide,
 		pool_decision_func pool_func,
-		pool_save_func save_func,
 		void *data, const char *type)
 {
 	assert(pool->num_occupants < POOL_MAX_PLAYERS);
@@ -25,7 +24,6 @@ void pool_add_player(struct player_pool *pool, int start_money,
 	occ->money = start_money;
 	occ->table_pos = -1;
 	occ->pool_func = pool_func;
-	occ->save_func = save_func;
 	occ->decide = decide;
 	occ->decision_data = data;
 
@@ -86,17 +84,4 @@ void pool_update_th(struct player_pool *pool, struct texas_holdem *th, struct po
 			}
 		} while(pool->next_attending != start_attending);
 	}
-}
-
-int pool_save_current_players(struct player_pool *pool, struct texas_holdem *th)
-{
-	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-		if(th->players[i].money && th->players[i].decision_data) {
-			struct pool_occupant *occ = &pool->occupants[pool->sitters[i]];
-			if(occ->save_func) {
-				occ->save_func(th->players[i].decision_data);
-			}
-		}
-	}
-	return 0;
 }

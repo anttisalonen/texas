@@ -3,6 +3,7 @@
 
 #include "ann1.h"
 #include "ai_random.h"
+#include "ai_manual.h"
 #include "ai_config.h"
 
 struct ai_config ai_configs[] = {
@@ -12,7 +13,8 @@ struct ai_config ai_configs[] = {
 		ann_pool_func,
 		ann_data_init,
 		ann_save_func,
-		ann_get_type
+		ann_load_func,
+		ann_modify
 	},
 	{
 		"random",
@@ -20,9 +22,20 @@ struct ai_config ai_configs[] = {
 		random_pool_func,
 		random_data_init,
 		NULL,
+		NULL,
 		NULL
 	},
 	{
+		"manual",
+		aim_decision,
+		aim_pool_func,
+		aim_data_init,
+		aim_save_func,
+		aim_load_func,
+		NULL
+	},
+	{
+		NULL,
 		NULL,
 		NULL,
 		NULL,

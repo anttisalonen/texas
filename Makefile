@@ -4,6 +4,7 @@ HEADERS = cards.h \
        ai_common.h \
        ai_random.h \
        ann1.h \
+       ai_manual.h \
        ai_config.h \
 
 SRCS = cards.c \
@@ -12,6 +13,7 @@ SRCS = cards.c \
        ai_common.c \
        ai_random.c \
        ann1.c \
+       ai_manual.c \
        ai_config.c \
        texas.c
 
@@ -24,8 +26,11 @@ CFLAGS = -Wall -Werror -std=c99 -g3
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-texas: $(OBJS)
+texas: $(OBJS) ais
 	$(CC) $(CFLAGS) -lfann -lm -lncurses $(OBJS) -o $@
+
+ais:
+	mkdir -p ais
 
 clean:
 	rm -f $(OBJS)

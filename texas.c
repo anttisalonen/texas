@@ -7,232 +7,52 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <poll.h>
-
-#include <ncurses.h>
 
 #include "cards.h"
 #include "th.h"
 #include "pool.h"
 #include "ai_config.h"
-
-#define PROMPT_Y 30
-#define PROMPT_X 1
-
-static int human = 0;
-static int speed = 5;
+#include "ncui.h"
 
 enum game_ui {
 	UI_NCURSES,
 	UI_TEXT
 };
 
-static void print_cards(int y, int x, const struct card *cards, int num_cards)
-{
-	static const char* ranks[] = {
-		"2",
-		"3",
-		"4",
-		"5",
-		"6",
-		"7",
-		"8",
-		"9",
-		"10",
-		"J",
-		"Q",
-		"K",
-		"A"
-	};
+struct ai_data {
+	char dummy[256];
+};
 
-	static const char* suits[] = {
-		"Spades",
-		"Hearts",
-		"Diamonds",
-		"Clubs"
-	};
+static int human = 0;
+static int speed = 5;
 
-	for(int i = 0; i < num_cards; i++) {
-		const char* rank = ranks[cards[i].rank];
-		const char* suit = suits[cards[i].suit];
-		mvprintw(y + i, x, "%s of %s", rank, suit);
-	}
-}
+static int seed = 0;
+static int start_money = 20;
+static int max_rounds = -1;
+static int do_save = 0;
 
-static void print_community_cards(const struct texas_holdem *th)
-{
-	print_cards(10, 11, th->community_cards, th->num_community_cards);
-}
+static enum game_ui ui = UI_NCURSES;
 
-static void print_pot(const struct texas_holdem *th)
-{
-	mvprintw(16, 16, "Pot: %d", th->pot);
-}
+static int ai_params_pos[32];
+static char ai_filenames[32][POOL_MAX_PLAYERS][256];
+static int num_ais[32];
 
-static enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data);
+static struct ai_data ais[POOL_MAX_PLAYERS];
 
-static void get_player_coordinates(int plnum, int *y, int *x)
-{
-	*x = 5 + (plnum % 5) * 16;
-	*y = plnum < 5 ? 2 : 20;
-}
+static struct player_pool pool;
 
-static void print_player(const struct texas_holdem *th, int player_index, int show_all_holes)
-{
-	int x, y;
-	get_player_coordinates(player_index, &y, &x);
-
-	mvprintw(y,     x, "%s", th->players[player_index].name);
-	mvprintw(y + 1, x, "Money: %d   ", th->players[player_index].money);
-	if(show_all_holes || th->players[player_index].decide == human_decision) {
-		print_cards(y + 2, x, th->players[player_index].hole_cards, 2);
-	}
-	if(!th->players[player_index].active) {
-		mvprintw(y + 4, x, "folds");
-	}
-}
-
-static void print_players(const struct texas_holdem *th, int show_all_holes)
-{
-	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-		if(!th->players[i].decide)
-			continue;
-
-		print_player(th, i, show_all_holes);
-	}
-}
-
-static enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
-{
-	while(1) {
-		print_players(th, !human);
-		print_community_cards(th);
-
-		if(raised_to)
-			mvprintw(PROMPT_Y, PROMPT_X, "(f)old, c(a)ll, (r)aise?\n");
-		else
-			mvprintw(PROMPT_Y, PROMPT_X, "(c)heck, (r)aise?\n");
-		refresh();
-
-		char buf[256];
-		memset(buf, 0x00, sizeof(buf));
-		read(STDIN_FILENO, buf, 256);
-		switch(buf[0]) {
-			case 'c':
-				if(!raised_to)
-					return DEC_CHECK;
-				break;
-			case 'f':
-				if(raised_to)
-					return DEC_FOLD;
-				break;
-			case 'a':
-				if(raised_to)
-					return DEC_CALL;
-				break;
-			case 'r':
-				return DEC_RAISE;
-			default:
-				break;
-		}
-	}
-}
+static struct texas_holdem th;
 
 static int human_pool_func(void *data)
 {
 	return 1;
 }
 
-void print_end_of_round(const struct texas_holdem *th, const struct th_event *ev, int wait)
-{
-	for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-		if(!th->players[i].active)
-			continue;
-		print_player(th, i, 1);
-		if(wait) {
-			poll(NULL, 0, 100 * speed);
-			refresh();
-		}
-		int y, x;
-		get_player_coordinates(i, &y, &x);
-		mvprintw(y + 4, x, "%s", ev->best_hands[i].cat->name);
-		if(wait) {
-			poll(NULL, 0, 100 * speed);
-			refresh();
-		}
-	}
-	if(!wait)
-		refresh();
-}
-
 void event_auto_callback(const struct texas_holdem *th, const struct th_event *ev)
 {
 }
 
-void event_callback(const struct texas_holdem *th, const struct th_event *ev)
-{
-	int x, y;
-	get_player_coordinates(ev->player_index, &y, &x);
-	clear();
-	print_players(th, !human);
-	print_community_cards(th);
-	print_pot(th);
-
-	switch(ev->type) {
-		case TH_EVENT_DECISION:
-			switch(ev->decision) {
-				case DEC_CHECK:
-					mvprintw(y + 4, x, "checks");
-					break;
-
-				case DEC_FOLD:
-					mvprintw(y + 4, x, "folds");
-					break;
-
-				case DEC_CALL:
-					mvprintw(y + 4, x, "calls");
-					break;
-
-				case DEC_RAISE:
-					mvprintw(y + 4, x, "raises by %d", ev->raise_amount);
-					break;
-			}
-			break;
-
-		case TH_EVENT_END_OF_ROUND:
-			print_end_of_round(th, ev, 1);
-			break;
-
-		case TH_EVENT_WIN:
-			print_end_of_round(th, ev, 0);
-			for(int i = 0; i < ev->num_winners; i++) {
-				get_player_coordinates(ev->winner_index[i], &y, &x);
-				mvprintw(y + 5, x, "wins %d",
-						ev->winner_money[i]);
-			}
-
-			poll(NULL, 0, 100 * speed);
-			refresh();
-			{
-				mvprintw(PROMPT_Y, PROMPT_X, "Hit Enter to continue");
-				char buf[256];
-				refresh();
-				read(STDIN_FILENO, buf, 256);
-			}
-			break;
-
-		case TH_EVENT_BET_ROUND_BEGIN:
-			print_community_cards(th);
-			print_players(th, !human);
-			poll(NULL, 0, 100 * speed);
-			refresh();
-			break;
-	}
-	poll(NULL, 0, 100 * speed);
-	refresh();
-}
-
-int ai_ind(const char *n)
+static int ai_ind(const char *n)
 {
 	int index = get_ai_config_index(n);
 	if(index == -1) {
@@ -274,21 +94,9 @@ static void generate_ai_filename(char *filename)
 	ai_create_filename(filename, randstr);
 }
 
-int main(int argc, char **argv)
+void parse_params(int argc, char **argv)
 {
-	int seed = time(NULL);
-	int start_money = 20;
-	int max_rounds = -1;
-	int do_save = 0;
-
-	enum game_ui ui = UI_NCURSES;
-
-	int ai_params_pos[32];
-	memset(ai_params_pos, 0x00, sizeof(ai_params_pos));
-	char ai_filenames[32][POOL_MAX_PLAYERS][256];
-	memset(ai_filenames, 0x00, sizeof(ai_filenames));
-	int num_ais[32];
-	memset(num_ais, 0x00, sizeof(num_ais));
+	seed = time(NULL);
 
 	for(int i = 1; i < argc; i++) {
 		if(!strcmp(argv[i], "-s")) {
@@ -324,13 +132,14 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 	}
+}
 
+void init_ui()
+{
 	switch(ui) {
 		case UI_NCURSES:
-			initscr();
-			noecho();
-			curs_set(0);
-			mvprintw(1, 0, "Random seed: %d", seed);
+			ncui_init();
+			ncui_set_speed(speed);
 			break;
 
 		case UI_TEXT:
@@ -341,18 +150,13 @@ int main(int argc, char **argv)
 			printf("Random seed: %d\n", seed);
 			break;
 	}
+}
 
+void init_game()
+{
 	srand(seed);
 
-	struct player_pool pool;
-
 	int data_pos = 0;
-
-	struct ai_data {
-		char dummy[256];
-	};
-
-	struct ai_data ais[POOL_MAX_PLAYERS];
 
 	pool_init(&pool);
 	if(human) {
@@ -394,12 +198,14 @@ int main(int argc, char **argv)
 		}
 	}
 
-	struct texas_holdem th;
 	th_init(&th, 1, ui == UI_NCURSES ? event_callback : event_auto_callback);
 
 	struct pool_update pupd;
 	pool_update_th(&pool, &th, &pupd);
+}
 
+void run_game()
+{
 	int num_rounds = 0;
 	while(1) {
 		if(th_play_hand(&th))
@@ -410,6 +216,7 @@ int main(int argc, char **argv)
 			if(max_rounds <= 0)
 				break;
 		}
+		struct pool_update pupd;
 		pool_update_th(&pool, &th, &pupd);
 		if(human) {
 			for(int i = 0; i < TH_MAX_PLAYERS; i++) {
@@ -422,9 +229,21 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if(ui != UI_NCURSES) {
+		printf("Final score after %d rounds:\n", num_rounds);
+		for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+			if(th.players[i].decide) {
+				printf("%s: %d\n", th.players[i].name, th.players[i].money);
+			}
+		}
+	}
+}
+
+void finish_game()
+{
 	if(do_save) {
 		int ind = 0;
-		data_pos = 0;
+		int data_pos = 0;
 		while(1) {
 			struct ai_config *conf = get_ai_config_by_index(ind);
 			if(!conf->ai_name)
@@ -440,17 +259,24 @@ int main(int argc, char **argv)
 			ind++;
 		}
 	}
+}
 
+void deinit_ui()
+{
 	if(ui == UI_NCURSES) {
-		endwin();
-	} else {
-		printf("Final score after %d rounds:\n", num_rounds);
-		for(int i = 0; i < TH_MAX_PLAYERS; i++) {
-			if(th.players[i].decide) {
-				printf("%s: %d\n", th.players[i].name, th.players[i].money);
-			}
-		}
+		ncui_deinit();
 	}
+}
 
+int main(int argc, char **argv)
+{
+	parse_params(argc, argv);
+	init_ui();
+	init_game();
+	run_game();
+	finish_game();
+	deinit_ui();
 	return 0;
 }
+
+

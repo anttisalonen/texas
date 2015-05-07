@@ -6,6 +6,7 @@ HEADERS = cards.h \
        ann1.h \
        ai_manual.h \
        ai_config.h \
+       ncui.h
 
 SRCS = cards.c \
        th.c \
@@ -15,6 +16,7 @@ SRCS = cards.c \
        ann1.c \
        ai_manual.c \
        ai_config.c \
+       ncui.c \
        texas.c
 
 OBJS = $(SRCS:.c=.o)

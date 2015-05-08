@@ -87,6 +87,7 @@ static void print_players(const struct texas_holdem *th, int show_all_holes)
 
 enum th_decision human_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
 {
+	clear();
 	while(1) {
 		print_players(th, 0);
 		print_community_cards(th);

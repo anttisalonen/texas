@@ -20,7 +20,8 @@ void pool_add_player(struct player_pool *pool, int start_money,
 	assert(pool->num_occupants < POOL_MAX_PLAYERS);
 
 	struct pool_occupant* occ = &pool->occupants[pool->num_occupants];
-	snprintf(occ->name, TH_MAX_PLAYER_NAME_LEN, "%s (%s)", name, type);
+	snprintf(occ->name, TH_MAX_PLAYER_NAME_LEN - 1, "%s (%s)", name, type);
+	strncpy(occ->real_name, name, TH_MAX_PLAYER_NAME_LEN - 1);
 	occ->money = start_money;
 	occ->table_pos = -1;
 	occ->pool_func = pool_func;
@@ -37,6 +38,7 @@ void pool_update_th(struct player_pool *pool, struct texas_holdem *th, struct po
 		if(th->players[i].decide) {
 			struct pool_occupant *occ = &pool->occupants[pool->sitters[i]];
 			occ->money = th->players[i].money;
+			occ->hands_dealt++;
 		}
 	}
 

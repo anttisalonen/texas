@@ -6,8 +6,11 @@ int ai_pool_func(int *num_rounds_played)
 {
 	(*num_rounds_played)++;
 	if(*num_rounds_played >= 10) {
-		*num_rounds_played = 0;
-		return 0;
+		int get_up = rand_uniform() < 0.1f;
+		if(get_up) {
+			*num_rounds_played = 0;
+			return 0;
+		}
 	}
 	return 1;
 }

@@ -41,6 +41,7 @@ struct texas_holdem {
 };
 
 enum th_event_type {
+	TH_EVENT_HANDS_DEALT,
 	TH_EVENT_DECISION,
 	TH_EVENT_BET_ROUND_BEGIN,
 	TH_EVENT_END_OF_ROUND,

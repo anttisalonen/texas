@@ -89,8 +89,10 @@ int main(int argc, char **argv)
 			char *eol = strrchr(timebuf, '\n');
 			if(eol)
 				*eol = '\0';
-			printf("%-20s: %-8s (%s)\n", key, pp->type,
-					timebuf);
+			printf("%-20s: %-8s (%s): %-6d %-6d | %.2f\n", key, pp->type,
+					timebuf, pp->hands_played,
+					pp->balance,
+					pp->balance / (float)pp->hands_played);
 		}
 		free(keys);
 		free(values);

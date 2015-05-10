@@ -7,10 +7,10 @@
 
 #define DATABASE_FILE "players.db"
 
-void load_dbt(DBT *dbt, void *data, int length)
+void load_dbt(DBT *dbt, const void *data, int length)
 {
 	memset(dbt, 0x00, sizeof(*dbt));  
-	dbt->data = data;
+	dbt->data = (void *)data;
 	dbt->size = length;
 }
 
@@ -35,9 +35,14 @@ DB *db_open(void)
 	return db;
 }
 
-void db_close(DB *db)
+int db_close(DB *db)
 {
-	db->close(db, 0);
+	int ret = db->close(db, 0);
+	if(ret) {
+		fprintf(stderr, "db->close: %s\n", db_strerror(ret));
+		assert(0);
+	}
+	return ret;
 }
 
 int get_db_contents(DB *db, char **names, struct db_player **players)
@@ -116,7 +121,7 @@ static int save_ai(void *data, int size, const char *filename)
 	return ret != 1;
 }
 
-int db_get_player(DB *db, char *name, struct db_player *pp, const char *ai_filename)
+int db_get_player(DB *db, const char *name, struct db_player *pp, const char *ai_filename)
 {
 	DBT key;
 	DBT value;
@@ -139,4 +144,42 @@ int db_get_player(DB *db, char *name, struct db_player *pp, const char *ai_filen
 	}
 	return 1;
 }
+
+int db_update_player(DB *db, const char *name, int new_hands_played, int session_balance)
+{
+	assert(new_hands_played >= 0);
+	if(new_hands_played == 0) {
+		assert(session_balance == 0);
+		return 0;
+	}
+
+	struct db_player *pp;
+
+	DBT key;
+	DBT value;
+	load_dbt(&key, name, strlen(name) + 1);
+	memset(&value, 0x00, sizeof(value));
+
+	int ret = db->get(db, NULL, &key, &value, 0);
+	if(ret) {
+		fprintf(stderr, "db->get %s: %s\n", name, db_strerror(ret)); 
+		assert(0);
+		return 1;
+	} else {
+		pp = (struct db_player*)value.data;
+
+		pp->hands_played += new_hands_played;
+		pp->balance += session_balance;
+
+		ret = db->put(db, NULL, &key, &value, 0);
+		if(ret != 0) {
+			fprintf(stderr, "db->put %s: %s\n", name, db_strerror(ret));
+			assert(0);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 

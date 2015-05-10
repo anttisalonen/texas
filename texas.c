@@ -39,18 +39,23 @@ static struct player_pool pool;
 
 static struct texas_holdem th;
 
+static DB *db;
+
 static int human_pool_func(void *data)
 {
 	return 1;
 }
 
-void event_auto_callback(const struct texas_holdem *th, const struct th_event *ev)
-{
-}
-
 static enum th_decision human_text_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
 {
 	return DEC_RAISE;
+}
+
+static void event_callback(const struct texas_holdem *th, const struct th_event *ev)
+{
+	if(ui == UI_NCURSES) {
+		ncui_event_callback(th, ev);
+	}
 }
 
 void parse_params(int argc, char **argv)
@@ -109,7 +114,7 @@ void init_game(void)
 	struct db_player *players;
 	char *available_players;
 
-	DB *db = db_open();
+	db = db_open();
 	srand(seed);
 
 	int num_db_entries = get_db_contents(db, &available_players, &players);
@@ -199,7 +204,6 @@ void init_game(void)
 				perror("unlink");
 				assert(0);
 			}
-			printf("Added AI player of type \"%s\" to pool.\n", conf->ai_name); 
 		}
 
 #if 0
@@ -211,7 +215,7 @@ void init_game(void)
 #endif
 	}
 
-	th_init(&th, 1, ui == UI_NCURSES ? event_callback : event_auto_callback);
+	th_init(&th, 1, event_callback);
 
 	struct pool_update pupd;
 	pool_update_th(&pool, &th, &pupd);
@@ -256,6 +260,13 @@ void run_game(void)
 
 void finish_game(void)
 {
+	for(int i = 0; i < pool.num_occupants; i++) {
+		int ret = db_update_player(db, pool.occupants[i].real_name,
+				pool.occupants[i].hands_dealt,
+				pool.occupants[i].money - start_money);
+		assert(!ret);
+	}
+	db_close(db);
 }
 
 void deinit_ui(void)

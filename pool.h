@@ -8,9 +8,10 @@ typedef int (*pool_decision_func)(void *data);
 
 struct pool_occupant {
 	char name[TH_MAX_PLAYER_NAME_LEN];
+	char real_name[TH_MAX_PLAYER_NAME_LEN];
 	int money;
+	int hands_dealt;
 	int table_pos;
-	int left_rounds;
 	th_decision_func decide;
 	pool_decision_func pool_func;
 	void *decision_data;

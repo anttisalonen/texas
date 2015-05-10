@@ -14,8 +14,9 @@ struct db_player {
 };
 
 DB *db_open(void);
-void db_close(DB *db);
+int db_close(DB *db);
 int get_db_contents(DB *db, char **names, struct db_player **players);
-int db_get_player(DB *db, char *name, struct db_player *pp, const char *ai_filename);
-void load_dbt(DBT *dbt, void *data, int length);
+int db_get_player(DB *db, const char *name, struct db_player *pp, const char *ai_filename);
+void load_dbt(DBT *dbt, const void *data, int length);
+int db_update_player(DB *db, const char *name, int new_hands_played, int session_balance);
 

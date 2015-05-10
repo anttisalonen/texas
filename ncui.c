@@ -146,7 +146,7 @@ static void print_end_of_round(const struct texas_holdem *th, const struct th_ev
 		refresh();
 }
 
-void event_callback(const struct texas_holdem *th, const struct th_event *ev)
+void ncui_event_callback(const struct texas_holdem *th, const struct th_event *ev)
 {
 	int x, y;
 	get_player_coordinates(ev->player_index, &y, &x);
@@ -204,6 +204,9 @@ void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 			print_pot(th);
 			poll(NULL, 0, 100 * speed);
 			refresh();
+			break;
+
+		case TH_EVENT_HANDS_DEALT:
 			break;
 	}
 	poll(NULL, 0, 100 * speed);

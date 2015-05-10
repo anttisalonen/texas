@@ -337,10 +337,13 @@ int th_play_hand(struct texas_holdem *th)
 	if(th_setup(th))
 		return -1;
 
+	struct th_event ev;
 	th_deal_hole_cards(th);
+	ev.type = TH_EVENT_HANDS_DEALT;
+	th->event_callback(th, &ev);
+
 	th_first_betting_round(th);
 	th_deal_community(th, 3);
-	struct th_event ev;
 	ev.type = TH_EVENT_BET_ROUND_BEGIN;
 	th->event_callback(th, &ev);
 	th_betting_round(th, th_pl_index(th, 1), th->small_blind * 2, 0);

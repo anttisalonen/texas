@@ -293,8 +293,9 @@ void init_card_deck(struct card_deck* d)
 
 void shuffle_card_deck(struct card_deck* d)
 {
-	for(int i = 0; i < NUM_DECK_CARDS; i++) {
-		int j = rand() % NUM_DECK_CARDS;
+	// Fisher-Yates
+	for(int i = NUM_DECK_CARDS - 1; i >= 1; i--) {
+		int j = rand() % (i + 1);
 		struct card c = d->cards[i];
 		d->cards[i] = d->cards[j];
 		d->cards[j] = c;

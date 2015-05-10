@@ -3,6 +3,10 @@
 #include "th.h"
 #include "pool.h"
 
+struct dummy_ai_data {
+	char dummy[256];
+};
+
 typedef const char *(*ai_get_filename_func)(void *data);
 typedef void (*ai_init_func)(void *data);
 typedef int (*ai_save_func)(void *data, const char *filename);

@@ -4,7 +4,7 @@
 
 #define TH_MAX_PLAYERS 10
 
-#define TH_MAX_PLAYER_NAME_LEN 8
+#define TH_MAX_PLAYER_NAME_LEN 32
 
 enum th_decision {
 	DEC_CHECK,

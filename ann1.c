@@ -75,7 +75,7 @@ int ann_load_func(void *data, const char *filename)
 	struct ai_data *d = (struct ai_data *)data;
 	struct fann **ann = &d->ann;
 	*ann = fann_create_from_file(filename);
-	return 0;
+	return !ann;
 }
 
 void ann_data_init(void *data)
@@ -104,7 +104,6 @@ int ann_save_func(void *data, const char *filename)
 {
 	struct ai_data *ai = (struct ai_data *)data;
 	fann_save(ai->ann, filename);
-	printf("FANN Saved file %s.\n", filename);
 	return 0;
 }
 

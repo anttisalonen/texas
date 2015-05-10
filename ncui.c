@@ -11,6 +11,7 @@
 #define PROMPT_X 1
 
 static int speed = 5;
+static int human = 0;
 
 static void print_cards(int y, int x, const struct card *cards, int num_cards)
 {
@@ -56,7 +57,7 @@ static void print_pot(const struct texas_holdem *th)
 
 static void get_player_coordinates(int plnum, int *y, int *x)
 {
-	*x = 5 + (plnum % 5) * 16;
+	*x = 5 + (plnum % 5) * 30;
 	*y = plnum < 5 ? 2 : 20;
 }
 
@@ -91,6 +92,7 @@ enum th_decision human_decision(const struct texas_holdem *th, int plnum, int ra
 	while(1) {
 		print_players(th, 0);
 		print_community_cards(th);
+		print_pot(th);
 
 		if(raised_to)
 			mvprintw(PROMPT_Y, PROMPT_X, "(f)old, c(a)ll, (r)aise?\n");
@@ -149,7 +151,6 @@ void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 	int x, y;
 	get_player_coordinates(ev->player_index, &y, &x);
 	clear();
-	int human = !strcmp(th->players[0].name, "0 (huma");
 	print_players(th, !human);
 	print_community_cards(th);
 	print_pot(th);
@@ -200,6 +201,7 @@ void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 		case TH_EVENT_BET_ROUND_BEGIN:
 			print_community_cards(th);
 			print_players(th, !human);
+			print_pot(th);
 			poll(NULL, 0, 100 * speed);
 			refresh();
 			break;
@@ -211,6 +213,11 @@ void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 void ncui_set_speed(int s)
 {
 	speed = s;
+}
+
+void ncui_set_human(int h)
+{
+	human = h;
 }
 
 void ncui_init(void)

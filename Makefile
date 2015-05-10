@@ -6,9 +6,10 @@ HEADERS = cards.h \
        ann1.h \
        ai_manual.h \
        ai_config.h \
-       ncui.h
+       ncui.h \
+       pdb.h
 
-SRCS = cards.c \
+SHSRCS = cards.c \
        th.c \
        pool.c \
        ai_common.c \
@@ -16,24 +17,34 @@ SRCS = cards.c \
        ann1.c \
        ai_manual.c \
        ai_config.c \
-       ncui.c \
-       texas.c
+       pdb.c
 
-OBJS = $(SRCS:.c=.o)
+TXSRCS = ncui.c texas.c
 
-default: texas
+PLSRCS = players.c
 
-CFLAGS = -Wall -Werror -std=c99 -g3
+SHOBJS = $(SHSRCS:.c=.o)
+TXOBJS = $(TXSRCS:.c=.o)
+PLOBJS = $(PLSRCS:.c=.o)
+
+default: texas players
+
+CFLAGS = -Wall -Werror -g3
 
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-texas: $(OBJS) ais
-	$(CC) $(CFLAGS) -lfann -lm -lncurses $(OBJS) -o $@
+texas: $(SHOBJS) $(TXOBJS) ais
+	$(CC) $(CFLAGS) -lfann -lm -ldb -lncurses $(SHOBJS) $(TXOBJS) -o $@
+
+players: $(SHOBJS) $(PLOBJS)
+	$(CC) $(CFLAGS) -lfann -lm -ldb $(SHOBJS) $(PLOBJS) -o $@
 
 ais:
 	mkdir -p ais
 
 clean:
-	rm -f $(OBJS)
-	rm -f texas
+	rm -f $(SHOBJS)
+	rm -f $(TXOBJS)
+	rm -f $(PLOBJS)
+	rm -f texas players

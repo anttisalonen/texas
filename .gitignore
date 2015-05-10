@@ -3,3 +3,5 @@ ai_*.net
 good/
 *.o
 ais/
+players.db
+players

@@ -13,31 +13,27 @@
 #include "pool.h"
 #include "ai_config.h"
 #include "ncui.h"
+#include "pdb.h"
+
+#define AI_TMP_FILENAME ".ai_ld.tmp"
 
 enum game_ui {
 	UI_NCURSES,
 	UI_TEXT
 };
 
-struct ai_data {
-	char dummy[256];
-};
-
-static int human = 0;
+static char *include_human;
 static int speed = 5;
 
 static int seed = 0;
 static int start_money = 20;
 static int max_rounds = -1;
-static int do_save = 0;
 
 static enum game_ui ui = UI_NCURSES;
 
-static int ai_params_pos[32];
-static char ai_filenames[32][POOL_MAX_PLAYERS][256];
-static int num_ais[32];
+static int num_players;
 
-static struct ai_data ais[POOL_MAX_PLAYERS];
+static struct dummy_ai_data ais[POOL_MAX_PLAYERS];
 
 static struct player_pool pool;
 
@@ -52,46 +48,9 @@ void event_auto_callback(const struct texas_holdem *th, const struct th_event *e
 {
 }
 
-static int ai_ind(const char *n)
+static enum th_decision human_text_decision(const struct texas_holdem *th, int plnum, int raised_to, void *data)
 {
-	int index = get_ai_config_index(n);
-	if(index == -1) {
-		fprintf(stderr, "Unknown AI: %s\n", n);
-		exit(1);
-	}
-	return index;
-}
-
-static void ai_create_filename(char *to, const char *pattern)
-{
-	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	snprintf(to, 255, "ais/%s_%02d%02d%02d%04ld",
-			pattern, tm.tm_hour,
-			tm.tm_min, tm.tm_sec, tv.tv_usec / 1000);
-}
-
-static void modify_ai_filename(char *to)
-{
-	char buf[256];
-	char *dot = strrchr(to, '_');
-	assert(dot);
-	*dot = '\0';
-	int ret = sscanf(to, "ais/%s", buf);
-	assert(ret == 1);
-	ai_create_filename(to, buf);
-}
-
-static void generate_ai_filename(char *filename)
-{
-	char randstr[9];
-	memset(randstr, 0x00, sizeof(randstr));
-	for(int j = 0; j < 8; j++) {
-		randstr[j] = rand() % 20 + 'a';
-	}
-	ai_create_filename(filename, randstr);
+	return DEC_RAISE;
 }
 
 void parse_params(int argc, char **argv)
@@ -99,11 +58,11 @@ void parse_params(int argc, char **argv)
 	seed = time(NULL);
 
 	for(int i = 1; i < argc; i++) {
-		if(!strcmp(argv[i], "-s")) {
+		if(!strcmp(argv[i], "-s") || !strcmp(argv[i], "--seed")) {
 			seed = atoi(argv[++i]);
 		}
-		else if(!strcmp(argv[i], "--human")) {
-			human = 1;
+		else if(!strcmp(argv[i], "--include_human")) {
+			include_human = argv[++i];
 		}
 		else if(!strcmp(argv[i], "--money")) {
 			start_money = atoi(argv[++i]);
@@ -111,16 +70,8 @@ void parse_params(int argc, char **argv)
 		else if(!strcmp(argv[i], "--rounds")) {
 			max_rounds = atoi(argv[++i]);
 		}
-		else if(!strncmp(argv[i], "--ai_num_", 9)) {
-			int ind = ai_ind(argv[i] + 9);
-			num_ais[ind] = atoi(argv[++i]);
-		}
-		else if(!strncmp(argv[i], "--ai_file_", 10)) {
-			int ind = ai_ind(argv[i] + 10);
-			strncpy(ai_filenames[ind][ai_params_pos[ind]++], argv[++i], 256);
-		}
-		else if(!strcmp(argv[i], "--save")) {
-			do_save = 1;
+		else if(!strcmp(argv[i], "--players")) {
+			num_players = atoi(argv[++i]);
 		}
 		else if(!strcmp(argv[i], "--speed")) {
 			speed = atoi(argv[++i]);
@@ -134,68 +85,130 @@ void parse_params(int argc, char **argv)
 	}
 }
 
-void init_ui()
+int init_ui(void)
 {
 	switch(ui) {
 		case UI_NCURSES:
 			ncui_init();
 			ncui_set_speed(speed);
+			ncui_set_human(!!include_human);
 			break;
 
 		case UI_TEXT:
-			if(human) {
-				fprintf(stderr, "Cannot play in text UI mode.\n");
-				exit(1);
-			}
 			printf("Random seed: %d\n", seed);
 			break;
 	}
+	return 0;
 }
 
-void init_game()
+void init_game(void)
 {
+	pool_init(&pool);
+
+	// Reservoir sampling
+	struct db_player *players;
+	char *available_players;
+
+	DB *db = db_open();
 	srand(seed);
 
-	int data_pos = 0;
+	int num_db_entries = get_db_contents(db, &available_players, &players);
+	char available_ai_players[num_db_entries][TH_MAX_PLAYER_NAME_LEN];
+	memset(available_ai_players, 0x00, sizeof(available_ai_players));
+	int num_ai_players = 0;
 
-	pool_init(&pool);
-	if(human) {
-		pool_add_player(&pool, start_money, human_decision, human_pool_func, NULL, "human");
-		data_pos++;
+	if(num_players > num_db_entries) {
+		fprintf(stderr, "You asked for %d players but only %d are available in the database.\n",
+				num_players, num_db_entries);
+		free(available_players);
+		free(players);
+		exit(1);
 	}
 
-	{
-		int ind = 0;
-		while(1) {
-			struct ai_config *conf = get_ai_config_by_index(ind);
-			if(!conf->ai_name)
-				break;
-
-			for(int i = 0; i < num_ais[ind]; i++) {
-				if(!ai_filenames[ind][i][0]) {
-					generate_ai_filename(ai_filenames[ind][i]);
-					conf->ai_init_func(&ais[i + data_pos]);
-				} else {
-					assert(conf->ai_load_func);
-					printf("Loading AI type \"%s\" from %s\n",
-							conf->ai_name,
-							ai_filenames[ind][i]);
-					conf->ai_load_func(&ais[i + data_pos],
-						ai_filenames[ind][i]);
-					if(conf->ai_modify_func && rand() % 2 == 0) {
-						printf("Modifying %s\n",
-								ai_filenames[ind][i]);
-						modify_ai_filename(ai_filenames[ind][i]);
-						conf->ai_modify_func(&ais[i + data_pos], 0.01f);
-					}
-				}
-				pool_add_player(&pool, start_money,
-						conf->ai_decision_func, conf->ai_pool_decision_func,
-						&ais[i + data_pos], conf->ai_name);
-			}
-			data_pos += num_ais[ind];
-			ind++;
+	for(int i = 0; i < num_db_entries; i++) {
+		if(strcmp(players[i].type, "human")) {
+			strncpy(available_ai_players[num_ai_players],
+					&available_players[i * TH_MAX_PLAYER_NAME_LEN],
+					TH_MAX_PLAYER_NAME_LEN - 1);
+			num_ai_players++;
 		}
+	}
+
+	free(players);
+	free(available_players);
+
+	char selected_players[num_players][TH_MAX_PLAYER_NAME_LEN];
+	memset(selected_players, 0x00, sizeof(selected_players));
+
+	for(int i = 0; i < num_players; i++) {
+		if(i >= num_ai_players) {
+			fprintf(stderr, "You asked for %d players but only %d AI are available in the database.\n",
+					num_players, num_ai_players);
+			exit(1);
+		}
+		strncpy(selected_players[i],
+				available_ai_players[i],
+				TH_MAX_PLAYER_NAME_LEN - 1);
+	}
+	for(int i = num_players; i < num_ai_players; i++) {
+		int j = rand() % (i + 1);
+		if(j < num_ai_players) {
+			strncpy(selected_players[j],
+					available_ai_players[i],
+					TH_MAX_PLAYER_NAME_LEN - 1);
+		}
+	}
+
+	if(include_human) {
+		strncpy(selected_players[0], include_human, TH_MAX_PLAYER_NAME_LEN - 1);
+	}
+
+	for(int i = 0; i < num_players; i++) {
+		struct db_player pp;
+		int ret = db_get_player(db, selected_players[i], &pp, AI_TMP_FILENAME);
+		if(ret) {
+			fprintf(stderr, "Couldn't find player \"%s\" in the database.\n",
+					selected_players[i]);
+			exit(1);
+		}
+
+		int human = !strcmp(pp.type, "human");
+
+		if(human && i != 0) {
+			/* Could be fixed by creating an input array for reservoir sampling */
+			fprintf(stderr, "I don\'t know how to handle randomly picked another human player. Exiting.\n");
+			exit(1);
+		}
+
+		if(human) {
+			pool_add_player(&pool, start_money,
+					ui == UI_NCURSES ? human_decision : human_text_decision,
+					human_pool_func, NULL,
+					selected_players[i], "human");
+		} else {
+			struct ai_config *conf = get_ai_config(pp.type);
+			assert(conf);
+			if(conf->ai_load_func) {
+				int ret = conf->ai_load_func(&ais[i], AI_TMP_FILENAME);
+				assert(!ret);
+			}
+			pool_add_player(&pool, start_money,
+					conf->ai_decision_func, conf->ai_pool_decision_func,
+					&ais[i], selected_players[i], conf->ai_name);
+			if(conf->ai_load_func && unlink(AI_TMP_FILENAME)) {
+				perror("unlink");
+				assert(0);
+			}
+			printf("Added AI player of type \"%s\" to pool.\n", conf->ai_name); 
+		}
+
+#if 0
+		conf->ai_init_func(&ais[i + data_pos]);
+		assert(conf->ai_load_func);
+		conf->ai_load_func(&ais[i + data_pos]);
+		if(conf->ai_modify_func && rand() % 2 == 0)
+			conf->ai_modify_func(&ais[i + data_pos], 0.01f);
+#endif
 	}
 
 	th_init(&th, 1, ui == UI_NCURSES ? event_callback : event_auto_callback);
@@ -204,7 +217,7 @@ void init_game()
 	pool_update_th(&pool, &th, &pupd);
 }
 
-void run_game()
+void run_game(void)
 {
 	int num_rounds = 0;
 	while(1) {
@@ -218,12 +231,14 @@ void run_game()
 		}
 		struct pool_update pupd;
 		pool_update_th(&pool, &th, &pupd);
-		if(human) {
+		if(include_human) {
 			for(int i = 0; i < TH_MAX_PLAYERS; i++) {
 				if(pupd.seats[i].player &&
 						pupd.seats[i].status == POOL_SEAT_FREED &&
-						!strcmp(pupd.seats[i].player, "0 (huma")) {
-					human = 0;
+						!strncmp(pupd.seats[i].player, include_human, strlen(include_human))) {
+					include_human = NULL;
+					ncui_set_human(0);
+					break;
 				}
 			}
 		}
@@ -239,29 +254,11 @@ void run_game()
 	}
 }
 
-void finish_game()
+void finish_game(void)
 {
-	if(do_save) {
-		int ind = 0;
-		int data_pos = 0;
-		while(1) {
-			struct ai_config *conf = get_ai_config_by_index(ind);
-			if(!conf->ai_name)
-				break;
-
-			for(int i = 0; i < num_ais[ind]; i++) {
-				printf("Saving AI type \"%s\" to %s\n", conf->ai_name,
-						ai_filenames[ind][i]);
-				conf->ai_save_func(&ais[i + data_pos],
-						ai_filenames[ind][i]);
-			}
-			data_pos += num_ais[ind];
-			ind++;
-		}
-	}
 }
 
-void deinit_ui()
+void deinit_ui(void)
 {
 	if(ui == UI_NCURSES) {
 		ncui_deinit();
@@ -271,11 +268,12 @@ void deinit_ui()
 int main(int argc, char **argv)
 {
 	parse_params(argc, argv);
-	init_ui();
 	init_game();
-	run_game();
-	finish_game();
-	deinit_ui();
+	if(!init_ui()) {
+		run_game();
+		finish_game();
+		deinit_ui();
+	}
 	return 0;
 }
 

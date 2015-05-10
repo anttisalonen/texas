@@ -53,7 +53,7 @@ int aim_load_func(void *data, const char *filename)
 	}
 	fclose(fp);
 	ret = sscanf(buf, "AIM " AIM_VERSION_STRING " %f", &d->want_raise);
-	return ret == 1;
+	return ret != 1;
 }
 
 void aim_data_init(void *data)
@@ -79,6 +79,6 @@ int aim_save_func(void *data, const char *filename)
 		fprintf(stderr, "Couldn't write to file %s\n", filename);
 	}
 	fclose(fp);
-	return ret == 1;
+	return ret != 1;
 }
 

@@ -15,12 +15,12 @@ void pool_init(struct player_pool *pool)
 void pool_add_player(struct player_pool *pool, int start_money,
 		th_decision_func decide,
 		pool_decision_func pool_func,
-		void *data, const char *type)
+		void *data, const char *name, const char *type)
 {
 	assert(pool->num_occupants < POOL_MAX_PLAYERS);
 
 	struct pool_occupant* occ = &pool->occupants[pool->num_occupants];
-	snprintf(occ->name, TH_MAX_PLAYER_NAME_LEN, "%d (%s)", pool->num_occupants, type);
+	snprintf(occ->name, TH_MAX_PLAYER_NAME_LEN, "%s (%s)", name, type);
 	occ->money = start_money;
 	occ->table_pos = -1;
 	occ->pool_func = pool_func;

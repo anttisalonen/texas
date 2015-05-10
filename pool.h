@@ -41,6 +41,6 @@ void pool_init(struct player_pool *pool);
 void pool_add_player(struct player_pool *pool, int start_money,
 		th_decision_func decide,
 		pool_decision_func pool_func,
-		void *data, const char *type);
+		void *data, const char *name, const char *type);
 void pool_update_th(struct player_pool *pool, struct texas_holdem *th, struct pool_update *update);
 

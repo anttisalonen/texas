@@ -8,7 +8,7 @@ struct dummy_ai_data {
 };
 
 typedef const char *(*ai_get_filename_func)(void *data);
-typedef void (*ai_init_func)(void *data);
+typedef void (*ai_init_func)(const char *type, void *data);
 typedef int (*ai_save_func)(void *data, const char *filename);
 typedef int (*ai_load_func)(void *data, const char *filename);
 typedef void (*ai_modify_func)(void *data, float var);
@@ -23,6 +23,7 @@ struct ai_config {
 	ai_modify_func ai_modify_func;
 };
 
+void ai_config_init(void);
 struct ai_config *get_ai_config(const char *name);
 int get_ai_config_index(const char *name);
 struct ai_config *get_ai_config_by_index(int i);

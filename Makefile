@@ -4,6 +4,7 @@ HEADERS = cards.h \
        ai_common.h \
        ai_random.h \
        ann1.h \
+       ann_common.h \
        ai_manual.h \
        ai_config.h \
        ncui.h \
@@ -15,6 +16,7 @@ SHSRCS = cards.c \
        ai_common.c \
        ai_random.c \
        ann1.c \
+       ann_common.c \
        ai_manual.c \
        ai_config.c \
        pdb.c

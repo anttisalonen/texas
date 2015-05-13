@@ -5,18 +5,14 @@
 #include "ai_random.h"
 #include "ai_manual.h"
 #include "ai_config.h"
+#include "ann_common.h"
 
-struct ai_config ai_configs[] = {
-	{
-		"fann",
-		ann_decision,
-		ann_pool_func,
-		ann_data_init,
-		ann_save_func,
-		ann_load_func,
-		ann_modify
-	},
-	{
+struct ai_config ai_configs[5];
+
+void ai_config_init(void)
+{
+	ai_configs[0] = fann_gen_ai_config("fann");
+	ai_configs[1] = (struct ai_config) {
 		"random",
 		random_decision,
 		random_pool_func,
@@ -24,8 +20,8 @@ struct ai_config ai_configs[] = {
 		NULL,
 		NULL,
 		NULL
-	},
-	{
+	};
+	ai_configs[2] = (struct ai_config) {
 		"manual",
 		aim_decision,
 		aim_pool_func,
@@ -33,8 +29,9 @@ struct ai_config ai_configs[] = {
 		aim_save_func,
 		aim_load_func,
 		NULL
-	},
-	{
+	};
+	ai_configs[3] = fann_gen_ai_config("fann2");
+	ai_configs[4] = (struct ai_config) {
 		NULL,
 		NULL,
 		NULL,
@@ -42,8 +39,8 @@ struct ai_config ai_configs[] = {
 		NULL,
 		NULL,
 		NULL
-	}
-};
+	};
+}
 
 struct ai_config *get_ai_config(const char *name)
 {

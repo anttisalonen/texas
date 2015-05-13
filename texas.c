@@ -168,6 +168,7 @@ void init_game(void)
 		strncpy(selected_players[0], include_human, TH_MAX_PLAYER_NAME_LEN - 1);
 	}
 
+	ai_config_init();
 	for(int i = 0; i < num_players; i++) {
 		struct db_player pp;
 		int ret = db_get_player(db, selected_players[i], &pp, AI_TMP_FILENAME);

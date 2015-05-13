@@ -103,6 +103,7 @@ int main(int argc, char **argv)
 		add_player(db, human_name, "human", 0, NULL);
 	}
 
+	ai_config_init();
 	if(ai_type) {
 		for(int i = 0; i < num_ais; i++) {
 			char ai_name[32];
@@ -120,7 +121,7 @@ int main(int argc, char **argv)
 				struct dummy_ai_data d;
 
 				if(aic->ai_save_func) {
-					aic->ai_init_func(&d);
+					aic->ai_init_func(ai_type, &d);
 					int ret = aic->ai_save_func(&d, ".ai.tmp");
 					if(ret) {
 						fprintf(stderr, "ai_save_func(%s): %d\n",

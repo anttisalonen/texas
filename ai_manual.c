@@ -56,7 +56,7 @@ int aim_load_func(void *data, const char *filename)
 	return ret != 1;
 }
 
-void aim_data_init(void *data)
+void aim_data_init(const char *type, void *data)
 {
 	struct ai_data *d = (struct ai_data *)data;
 	d->want_raise = rand_uniform();

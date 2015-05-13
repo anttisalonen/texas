@@ -27,7 +27,7 @@ int random_pool_func(void *data)
 	return ai_pool_func(&d->num_rounds_played);
 }
 
-void random_data_init(void *data)
+void random_data_init(const char *type, void *data)
 {
 	struct ai_data *d = (struct ai_data *)data;
 	d->num_rounds_played = 0;

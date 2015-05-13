@@ -56,6 +56,8 @@ int main(int argc, char **argv)
 	const char *ai_type = NULL;
 	int num_ais = 0;
 	int list = 0;
+	int purge_min_hands_played = -1;
+	float purge_max_earnings_per_hand = 0.0f;
 
 	for(int i = 1; i < argc; i++) {
 		if(!strcmp(argv[i], "--human")) {
@@ -63,6 +65,9 @@ int main(int argc, char **argv)
 		} else if(!strcmp(argv[i], "--ai")) {
 			ai_type = argv[++i];
 			num_ais = atoi(argv[++i]);
+		} else if(!strcmp(argv[i], "--purge")) {
+			purge_min_hands_played = atoi(argv[++i]);
+			purge_max_earnings_per_hand = atof(argv[++i]);
 		} else if(!strcmp(argv[i], "--list")) {
 			list = 1;
 		} else {
@@ -96,7 +101,6 @@ int main(int argc, char **argv)
 		}
 		free(keys);
 		free(values);
-
 	}
 
 	if(human_name) {
@@ -156,6 +160,37 @@ int main(int argc, char **argv)
 				free(ai_data);
 			}
 		}
+	}
+
+	if(purge_min_hands_played >= 0) {
+		printf("Purging players with at least %d hands and less than %.2f earnings per hand.\n",
+				purge_min_hands_played, purge_max_earnings_per_hand);
+		char *keys = NULL;
+		struct db_player *values = NULL;
+		int num_entries;
+
+		num_entries = get_db_contents(db, &keys, &values);
+
+		for(int i = 0; i < num_entries; i++) {
+			const char *key = &keys[i * 32];
+			struct db_player *pp = &values[i];
+
+			if(pp->hands_played >= purge_min_hands_played &&
+					pp->balance / (float)pp->hands_played <= purge_max_earnings_per_hand) {
+				printf("Purging %s\n", key);
+
+				DBT delkey;
+				load_dbt(&delkey, (void *)key, strlen(key) + 1);
+				int dbret = db->del(db, NULL, &delkey, 0);
+				if(dbret) {
+					fprintf(stderr, "db->del %s: %s\n", key, db_strerror(dbret));
+					db_close(db);
+					exit(1);
+				}
+			}
+		}
+		free(keys);
+		free(values);
 	}
 
 	db_close(db);

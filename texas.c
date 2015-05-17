@@ -19,7 +19,8 @@
 
 enum game_ui {
 	UI_NCURSES,
-	UI_TEXT
+	UI_TEXT,
+	UI_SILENT
 };
 
 static char *include_human;
@@ -51,10 +52,84 @@ static enum th_decision human_text_decision(const struct texas_holdem *th, int p
 	return DEC_RAISE;
 }
 
+static void text_event_callback(const struct texas_holdem *th, const struct th_event *ev)
+{
+	switch(ev->type) {
+		case TH_EVENT_HANDS_DEALT:
+			printf("New hand:\n");
+			{
+				for(int i = 0; i < TH_MAX_PLAYERS; i++) {
+					if(!th->players[i].active)
+						continue;
+					char buf[2][1024];
+					card_to_text(&th->players[i].hole_cards[0], buf[0]);
+					card_to_text(&th->players[i].hole_cards[1], buf[1]);
+					printf("%2d %-20s: %-6d %-16s %-16s\n",
+							i + 1, th->players[i].name, th->players[i].money,
+							buf[0], buf[1]);
+				}
+			}
+			break;
+
+		case TH_EVENT_DECISION:
+			switch(ev->decision) {
+				case DEC_CHECK:
+					printf("%2d %s checks\n",
+							ev->player_index + 1,
+							th->players[ev->player_index].name);
+					break;
+
+				case DEC_FOLD:
+					printf("%2d %s folds\n",
+							ev->player_index + 1,
+							th->players[ev->player_index].name);
+					break;
+
+				case DEC_CALL:
+					printf("%2d %s calls\n",
+							ev->player_index + 1,
+							th->players[ev->player_index].name);
+					break;
+
+				case DEC_RAISE:
+					printf("%2d %s raises to %d\n",
+							ev->player_index + 1,
+							th->players[ev->player_index].name,
+							ev->raise_amount);
+					break;
+			}
+			break;
+
+		case TH_EVENT_BET_ROUND_BEGIN:
+			printf("Community cards: ");
+			for(int i = 0; i < th->num_community_cards; i++) {
+				char buf[1024];
+				card_to_text(&th->community_cards[i], buf);
+				printf("%-16s ", buf);
+			}
+			printf("\n");
+			break;
+
+		case TH_EVENT_WIN:
+			for(int i = 0; i < ev->num_winners; i++) {
+				printf("%2d %s wins %d\n",
+						ev->winner_index[i] + 1,
+						th->players[ev->winner_index[i]].name,
+						ev->winner_money[i]);
+			}
+			break;
+
+		default:
+			break;
+	}
+}
+
 static void event_callback(const struct texas_holdem *th, const struct th_event *ev)
 {
 	if(ui == UI_NCURSES) {
 		ncui_event_callback(th, ev);
+	} else if(ui == UI_TEXT) {
+		text_event_callback(th, ev);
 	}
 }
 
@@ -100,6 +175,7 @@ int init_ui(void)
 			break;
 
 		case UI_TEXT:
+		case UI_SILENT:
 			printf("Random seed: %d\n", seed);
 			break;
 	}

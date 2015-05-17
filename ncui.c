@@ -13,7 +13,7 @@
 static int speed = 5;
 static int human = 0;
 
-static void print_cards(int y, int x, const struct card *cards, int num_cards)
+void card_to_text(const struct card *card, char *buf)
 {
 	static const char* ranks[] = {
 		"2",
@@ -38,10 +38,17 @@ static void print_cards(int y, int x, const struct card *cards, int num_cards)
 		"Clubs"
 	};
 
+	const char* rank = ranks[card->rank];
+	const char* suit = suits[card->suit];
+	sprintf(buf, "%s of %s", rank, suit);
+}
+
+static void print_cards(int y, int x, const struct card *cards, int num_cards)
+{
 	for(int i = 0; i < num_cards; i++) {
-		const char* rank = ranks[cards[i].rank];
-		const char* suit = suits[cards[i].suit];
-		mvprintw(y + i, x, "%s of %s", rank, suit);
+		char buf[1024];
+		card_to_text(&cards[i], buf);
+		mvprintw(y + i, x, "%s", buf);
 	}
 }
 
@@ -171,7 +178,7 @@ void ncui_event_callback(const struct texas_holdem *th, const struct th_event *e
 					break;
 
 				case DEC_RAISE:
-					mvprintw(y + 4, x, "raises by %d", ev->raise_amount);
+					mvprintw(y + 4, x, "raises to %d", ev->raise_amount);
 					break;
 			}
 			break;

@@ -4,10 +4,11 @@
 #include "ann1.h"
 #include "ai_random.h"
 #include "ai_manual.h"
+#include "ai_manual2.h"
 #include "ai_config.h"
 #include "ann_common.h"
 
-struct ai_config ai_configs[5];
+struct ai_config ai_configs[6];
 
 void ai_config_init(void)
 {
@@ -32,6 +33,15 @@ void ai_config_init(void)
 	};
 	ai_configs[3] = fann_gen_ai_config("fann2");
 	ai_configs[4] = (struct ai_config) {
+		"manual2",
+		aim2_decision,
+		aim2_pool_func,
+		aim2_data_init,
+		aim2_save_func,
+		aim2_load_func,
+		NULL
+	};
+	ai_configs[5] = (struct ai_config) {
 		NULL,
 		NULL,
 		NULL,

@@ -7,5 +7,4 @@ int aim_pool_func(void *data);
 void aim_data_init(const char *type, void *data);
 int aim_save_func(void *data, const char *filename);
 int aim_load_func(void *data, const char *filename);
-const char *aim_get_type(void *data);
 

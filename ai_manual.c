@@ -38,22 +38,8 @@ int aim_load_func(void *data, const char *filename)
 {
 	struct ai_data *d = (struct ai_data *)data;
 	d->num_rounds_played = 0;
-	FILE *fp = fopen(filename, "r");
-	if(!fp) {
-		fprintf(stderr, "Couldn't open file %s\n", filename);
-		return 1;
-	}
-	char buf[1024];
-	memset(buf, 0x00, sizeof(buf));
-	int ret = fread(buf, 1, 1024, fp);
-	if(ret < 3) {
-		fprintf(stderr, "Couldn't read file %s\n", filename);
-		fclose(fp);
-		return 1;
-	}
-	fclose(fp);
-	ret = sscanf(buf, "AIM " AIM_VERSION_STRING " %f", &d->want_raise);
-	return ret != 1;
+	float *values[] = {&d->want_raise, NULL};
+	return ai_common_load_func("AIM " AIM_VERSION_STRING, values, filename);
 }
 
 void aim_data_init(const char *type, void *data)
@@ -66,19 +52,7 @@ void aim_data_init(const char *type, void *data)
 int aim_save_func(void *data, const char *filename)
 {
 	struct ai_data *d = (struct ai_data *)data;
-	FILE *fp = fopen(filename, "w");
-	if(!fp) {
-		fprintf(stderr, "Couldn't open file %s\n", filename);
-		return 1;
-	}
-	char buf[1024];
-	memset(buf, 0x00, sizeof(buf));
-	snprintf(buf, 1023, "AIM " AIM_VERSION_STRING " %f\n", d->want_raise);
-	int ret = fwrite(buf, strlen(buf), 1, fp);
-	if(ret != 1) {
-		fprintf(stderr, "Couldn't write to file %s\n", filename);
-	}
-	fclose(fp);
-	return ret != 1;
+	float *values[] = {&d->want_raise, NULL};
+	return ai_common_save_func("AIM " AIM_VERSION_STRING, values, filename);
 }
 
